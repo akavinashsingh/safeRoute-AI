@@ -27,36 +27,94 @@ CORS(app, resources={
     r"/*": {
         "origins": "*",
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+        "supports_credentials": True
     }
 })
+
+# Additional CORS headers for file:// protocol
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 API_KEY = "AIzaSyDshT7uMl6hfy_sXU3YJbHcJmn2IPA1cY4"
 
-# Gemini AI Configuration
+# Gemini AI Configuration with proper verification
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyDAa1KJkZpJFeSKG-3tRfWC0jwWW-9r7_M')  # Updated API key
+model = None
+model_name = None
+
 if GEMINI_AVAILABLE and GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
+    
+    # Validate API key first
+    print(f"🔑 Testing Gemini API key: {GEMINI_API_KEY[:10]}...{GEMINI_API_KEY[-4:]}")
+    
     try:
-        # Try different model names
-        model = genai.GenerativeModel('gemini-1.5-pro')
-        print("✅ Gemini AI configured successfully with gemini-1.5-pro")
-    except:
-        try:
-            model = genai.GenerativeModel('gemini-pro')
-            print("✅ Gemini AI configured successfully with gemini-pro")
-        except:
+        # Test API key validity by listing models
+        available_models = list(genai.list_models())
+        print(f"✅ API key valid - found {len(available_models)} available models")
+        for model_info in available_models[:5]:  # Show first 5 models
+            print(f"   📋 Available: {model_info.name}")
+    except Exception as api_error:
+        print(f"❌ API key validation failed: {api_error}")
+        print("🔧 Please check:")
+        print("   1. API key is correct")
+        print("   2. API key has proper permissions")
+        print("   3. Billing is enabled (if required)")
+        print("   4. Visit: https://aistudio.google.com/app/apikey")
+        model = None
+        model_name = None
+    else:
+        # Test different FREE model names with separate quotas (Updated for 2024/2025)
+        model_candidates = [
+            'models/gemini-2.0-flash-lite',        # Lighter model - higher quota limit
+            'models/gemini-2.0-flash-lite-001',    # Specific lite version
+            'models/gemini-2.0-flash',             # 2.0 model - separate quota from 2.5
+            'models/gemini-2.0-flash-001',         # Specific 2.0 version
+            'models/gemini-2.5-flash',             # Latest but may hit quota first
+            'models/gemini-1.5-flash',             # Previous generation (if available)
+            'models/gemini-1.5-pro',               # Previous pro model (if available)
+            'gemini-2.0-flash-lite',              # Without models/ prefix
+            'gemini-2.0-flash',                    # Without models/ prefix
+            'gemini-1.5-flash',                    # Without models/ prefix
+            'gemini-pro',                          # Legacy fallback
+        ]
+        
+        for candidate in model_candidates:
             try:
-                model = genai.GenerativeModel('models/gemini-pro')
-                print("✅ Gemini AI configured successfully with models/gemini-pro")
-            except:
-                model = None
-                print("⚠️ Could not configure any Gemini model")
+                print(f"🧪 Testing Gemini model: {candidate}")
+                test_model = genai.GenerativeModel(candidate)
+                
+                # Test with a simple prompt to verify it works
+                test_response = test_model.generate_content("Hello, respond with just 'OK'")
+                test_text = test_response.text.strip()
+                
+                if test_text and len(test_text) > 0:
+                    model = test_model
+                    model_name = candidate
+                    print(f"✅ Gemini AI configured successfully with {candidate}")
+                    print(f"✅ Test response: {test_text}")
+                    break
+                else:
+                    print(f"⚠️ Model {candidate} responded but with empty text")
+                    
+            except Exception as e:
+                print(f"❌ Model {candidate} failed: {str(e)}")
+                continue
+        
+        if not model:
+            print("❌ Could not configure any Gemini model - all candidates failed")
+            print("🔄 Will use Google Places API fallback for emergency suggestions")
 else:
-    model = None
-    print("⚠️ Gemini AI not configured")
+    print("⚠️ Gemini AI not configured - missing library or API key")
+    print("🔄 Will use Google Places API fallback for emergency suggestions")
 
 # Crime Database for Route Analysis
 CRIME_DATABASE = {
@@ -532,181 +590,289 @@ def get_nearby_places_with_google_api(lat, lng):
 def get_emergency_suggestions_with_ai(lat, lng):
     """
     Use Gemini AI to find nearby emergency services and provide safety suggestions
+    ENHANCED VERSION with multiple free model fallbacks for quota limits
     """
-    if not GEMINI_AVAILABLE or not model:
+    if not GEMINI_AVAILABLE:
+        print("⚠️ Gemini AI not available, using fallback")
         return get_fallback_emergency_suggestions(lat, lng)
     
-    try:
-        # Create a comprehensive prompt for Gemini AI
-        prompt = f"""
-        EMERGENCY ASSISTANCE REQUEST - IMMEDIATE RESPONSE NEEDED
-        
-        Location: {lat}, {lng} (Latitude, Longitude)
-        
-        CRITICAL: Find the ABSOLUTE CLOSEST emergency services to these exact coordinates. 
-        Distance is the TOP PRIORITY - I need the nearest possible services.
-        
-        Please provide ONLY the closest services within 2km radius if possible:
-        
-        1. HOSPITALS (3 CLOSEST ONLY):
-        - Name, address, phone number, EXACT distance in km, specialties
-        - SORT BY DISTANCE - closest first
-        
-        2. POLICE STATIONS (2 CLOSEST ONLY):
-        - Name, address, phone number, EXACT distance in km, type
-        - SORT BY DISTANCE - closest first
-        
-        3. EMERGENCY MECHANICS/GAS STATIONS (2 CLOSEST ONLY):
-        - Name, address, phone number, EXACT distance in km, services
-        - SORT BY DISTANCE - closest first
-        
-        4. SAFE PLACES/HOTELS (2 CLOSEST ONLY):
-        - Name, address, phone number, EXACT distance in km, amenities
-        - SORT BY DISTANCE - closest first
-        
-        5. IMMEDIATE SAFETY TIPS (3 tips):
-        - Context-aware safety advice for this specific location
-        
-        Please respond in this EXACT JSON format:
-        {{
-            "hospitals": [
-                {{"name": "Hospital Name", "address": "Full Address", "phone": "Phone", "distance": "X.X km", "specialties": ["Emergency", "Trauma"]}}
-            ],
-            "police_stations": [
-                {{"name": "Station Name", "address": "Full Address", "phone": "Phone", "distance": "X.X km", "type": "Local Police"}}
-            ],
-            "mechanics": [
-                {{"name": "Mechanic Name", "address": "Full Address", "phone": "Phone", "distance": "X.X km", "services": ["24/7", "Towing"]}}
-            ],
-            "hotels_restrooms": [
-                {{"name": "Place Name", "address": "Full Address", "phone": "Phone", "distance": "X.X km", "amenities": ["Safe Space", "Restrooms"]}}
-            ],
-            "emergency_tips": [
-                "Tip 1",
-                "Tip 2", 
-                "Tip 3"
-            ]
-        }}
-        
-        CRITICAL REQUIREMENTS:
-        - Use REAL places near the coordinates {lat}, {lng}
-        - Calculate EXACT distances from {lat}, {lng}
-        - SORT ALL results by distance (closest first)
-        - Include actual phone numbers when possible
-        - Prioritize services within 2km radius
-        - If no services within 2km, expand to 5km maximum
-        """
-        
-        print(f"🤖 Sending emergency request to Gemini AI for location: {lat}, {lng}")
-        
-        # Generate response from Gemini with timeout handling
+    # List of free models to try (each has separate quota limits)
+    free_models_to_try = [
+        'models/gemini-2.0-flash-lite',        # Lighter model - higher quota
+        'models/gemini-2.0-flash-lite-001',    # Specific lite version
+        'models/gemini-2.0-flash',             # 2.0 model - separate quota
+        'models/gemini-2.0-flash-001',         # Specific 2.0 version
+        'models/gemini-2.5-flash',             # Latest (may be quota limited)
+    ]
+    
+    # If we have a configured model, try it first
+    models_to_test = []
+    if model and model_name:
+        models_to_test.append((model, model_name))
+    
+    # Add other free models to try
+    for model_name_candidate in free_models_to_try:
+        if model_name_candidate != model_name:  # Don't duplicate the current model
+            try:
+                test_model = genai.GenerativeModel(model_name_candidate)
+                models_to_test.append((test_model, model_name_candidate))
+            except Exception as e:
+                print(f"⚠️ Could not create model {model_name_candidate}: {e}")
+                continue
+    
+    # Try each model until one works
+    for attempt_model, attempt_model_name in models_to_test:
         try:
-            response = model.generate_content(prompt)
-            response_text = response.text.strip()
+            print(f"🤖 Trying Gemini model: {attempt_model_name}")
             
-            print(f"🤖 Gemini AI Raw Response: {response_text[:500]}...")
-        except Exception as gemini_error:
-            print(f"❌ Gemini AI generation failed: {gemini_error}")
-            return get_fallback_emergency_suggestions(lat, lng)
-        
-        # Try to parse JSON from response
-        try:
-            # Clean up the response - remove markdown formatting if present
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
+            # Create a comprehensive prompt for Gemini AI
+            prompt = f"""EMERGENCY ASSISTANCE REQUEST - IMMEDIATE RESPONSE NEEDED
+
+Location: {lat}, {lng} (Latitude, Longitude)
+
+Find the CLOSEST emergency services to these coordinates within 5km radius.
+
+Provide information for:
+1. HOSPITALS (top 3 closest)
+2. POLICE STATIONS (top 2 closest)  
+3. GAS STATIONS/MECHANICS (top 2 closest)
+4. SAFE PLACES/HOTELS (top 2 closest)
+5. EMERGENCY SAFETY TIPS (3 tips)
+
+CRITICAL: Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
+
+{{
+    "hospitals": [
+        {{"name": "Hospital Name", "address": "Full Address", "phone": "+XX XXX XXX", "distance": "X.X km", "specialties": ["Emergency", "Trauma"]}}
+    ],
+    "police_stations": [
+        {{"name": "Station Name", "address": "Full Address", "phone": "+XX XXX XXX", "distance": "X.X km", "type": "Local Police"}}
+    ],
+    "mechanics": [
+        {{"name": "Mechanic/Gas Station", "address": "Full Address", "phone": "+XX XXX XXX", "distance": "X.X km", "services": ["24/7", "Towing"]}}
+    ],
+    "hotels_restrooms": [
+        {{"name": "Hotel/Safe Place", "address": "Full Address", "phone": "+XX XXX XXX", "distance": "X.X km", "amenities": ["Safe Space", "Restrooms"]}}
+    ],
+    "emergency_tips": ["Tip 1", "Tip 2", "Tip 3"]
+}}"""
+
+            # Generate response with timeout and retry
+            max_retries = 2
+            for attempt in range(max_retries):
+                try:
+                    print(f"🔄 Attempt {attempt + 1}/{max_retries} with {attempt_model_name}")
+                    response = attempt_model.generate_content(prompt,
+                        generation_config={
+                            'temperature': 0.1,  # Lower temperature for more consistent JSON
+                            'top_p': 0.8,
+                            'top_k': 40,
+                            'max_output_tokens': 4096,  # Increased to allow full JSON response
+                        })
+                    
+                    response_text = response.text.strip()
+                    print(f"📝 {attempt_model_name} Response Length: {len(response_text)} chars")
+                    print(f"📝 First 200 chars: {response_text[:200]}")
+                    
+                    # Clean up markdown formatting
+                    cleaned_text = response_text
+                    
+                    # Remove markdown code blocks
+                    if "```json" in cleaned_text:
+                        cleaned_text = cleaned_text.split("```json")[1].split("```")[0].strip()
+                    elif "```" in cleaned_text:
+                        # Try to extract content between any code blocks
+                        parts = cleaned_text.split("```")
+                        if len(parts) >= 3:
+                            cleaned_text = parts[1].strip()
+                    
+                    # Remove any leading/trailing whitespace
+                    cleaned_text = cleaned_text.strip()
+                    
+                    # Try to find JSON object boundaries
+                    if not cleaned_text.startswith('{'):
+                        # Try to find the first {
+                        start_idx = cleaned_text.find('{')
+                        if start_idx != -1:
+                            cleaned_text = cleaned_text[start_idx:]
+                    
+                    if not cleaned_text.endswith('}'):
+                        # Try to find the last }
+                        end_idx = cleaned_text.rfind('}')
+                        if end_idx != -1:
+                            cleaned_text = cleaned_text[:end_idx + 1]
+                    
+                    print(f"🧹 Cleaned text length: {len(cleaned_text)} chars")
+                    print(f"🧹 Cleaned first 200 chars: {cleaned_text[:200]}")
+                    
+                    # Parse JSON
+                    suggestions = json.loads(cleaned_text)
+                    
+                    # Validate structure
+                    required_keys = ['hospitals', 'police_stations', 'mechanics', 'hotels_restrooms', 'emergency_tips']
+                    missing_keys = [key for key in required_keys if key not in suggestions]
+                    
+                    if missing_keys:
+                        print(f"⚠️ Missing keys in response: {missing_keys}")
+                        # Add empty arrays for missing keys
+                        for key in missing_keys:
+                            suggestions[key] = []
+                    
+                    # Verify we have at least some data
+                    total_results = (len(suggestions.get('hospitals', [])) + 
+                                   len(suggestions.get('police_stations', [])) + 
+                                   len(suggestions.get('mechanics', [])) + 
+                                   len(suggestions.get('hotels_restrooms', [])))
+                    
+                    if total_results == 0:
+                        print(f"⚠️ {attempt_model_name} returned valid JSON but no emergency services")
+                        if attempt < max_retries - 1:
+                            print(f"🔄 Retrying with {attempt_model_name}... ({attempt + 2}/{max_retries})")
+                            continue
+                        else:
+                            print(f"❌ {attempt_model_name} exhausted, trying next model")
+                            break  # Try next model
+                    
+                    print(f"✅ Gemini AI Success with {attempt_model_name}!")
+                    print(f"   📊 Hospitals: {len(suggestions.get('hospitals', []))}")
+                    print(f"   📊 Police: {len(suggestions.get('police_stations', []))}")
+                    print(f"   📊 Mechanics: {len(suggestions.get('mechanics', []))}")
+                    print(f"   📊 Safe Places: {len(suggestions.get('hotels_restrooms', []))}")
+                    
+                    return suggestions
+                    
+                except json.JSONDecodeError as e:
+                    print(f"❌ JSON Parse Error with {attempt_model_name} (attempt {attempt + 1}): {e}")
+                    print(f"   Error at position {e.pos}")
+                    print(f"   Problematic text around error:")
+                    if hasattr(e, 'pos') and e.pos:
+                        start = max(0, e.pos - 50)
+                        end = min(len(cleaned_text), e.pos + 50)
+                        print(f"   ...{cleaned_text[start:end]}...")
+                    
+                    if attempt < max_retries - 1:
+                        print(f"🔄 Retrying with {attempt_model_name}... ({attempt + 2}/{max_retries})")
+                        continue
+                    else:
+                        print(f"❌ {attempt_model_name} JSON parsing failed, trying next model")
+                        break  # Try next model
+                        
+                except Exception as e:
+                    error_msg = str(e)
+                    if "quota" in error_msg.lower() or "limit" in error_msg.lower():
+                        print(f"❌ {attempt_model_name} quota exceeded: {e}")
+                        break  # Try next model immediately
+                    else:
+                        print(f"❌ {attempt_model_name} Generation Error (attempt {attempt + 1}): {e}")
+                        if attempt < max_retries - 1:
+                            print(f"🔄 Retrying with {attempt_model_name}... ({attempt + 2}/{max_retries})")
+                            continue
+                        else:
+                            print(f"❌ {attempt_model_name} failed, trying next model")
+                            break  # Try next model
             
-            suggestions = json.loads(response_text)
-            
-            # Validate the structure
-            required_keys = ['hospitals', 'police_stations', 'mechanics', 'hotels_restrooms', 'emergency_tips']
-            for key in required_keys:
-                if key not in suggestions:
-                    suggestions[key] = []
-            
-            print(f"✅ Gemini AI suggestions parsed successfully")
-            print(f"📊 Found: {len(suggestions.get('hospitals', []))} hospitals, {len(suggestions.get('police_stations', []))} police stations")
-            
-            return suggestions
-            
-        except json.JSONDecodeError as e:
-            print(f"❌ JSON parsing error: {e}")
-            print(f"Raw response: {response_text}")
-            return get_fallback_emergency_suggestions(lat, lng)
-            
-    except Exception as e:
-        print(f"❌ Gemini AI Error: {e}")
-        traceback.print_exc()
-        return get_fallback_emergency_suggestions(lat, lng)
+        except Exception as e:
+            error_msg = str(e)
+            if "quota" in error_msg.lower() or "limit" in error_msg.lower():
+                print(f"❌ {attempt_model_name} quota exceeded during initialization: {e}")
+            else:
+                print(f"❌ {attempt_model_name} initialization error: {e}")
+            continue  # Try next model
+    
+    # If all Gemini models failed, use fallback
+    print("❌ All Gemini models failed or quota exceeded, using Google Places API fallback")
+    return get_fallback_emergency_suggestions(lat, lng)
+
 
 def get_fallback_emergency_suggestions(lat, lng):
     """
-    Fallback emergency suggestions when Gemini AI is not available
-    Prioritizes Google Places API (New) for dynamic location-based results
+    Enhanced fallback with proper priority:
+    1. Try Google Places API (New) FIRST
+    2. If that fails, use generic suggestions
     """
     print(f"🔄 Using fallback emergency suggestions for {lat}, {lng}")
     
-    # ALWAYS try Google Places API (New) first for any location
-    print(f"🌐 Attempting to find real nearby places using Google Places API (New)...")
+    # Try Google Places API (New)
+    print(f"🌐 Attempting Google Places API (New)...")
     try:
         places_suggestions = get_nearby_places_with_google_api(lat, lng)
-        if places_suggestions and places_suggestions.get('hospitals') and len(places_suggestions.get('hospitals', [])) > 0:
-            print(f"✅ Found real nearby places using Google Places API (New)")
-            print(f"📊 Found {len(places_suggestions.get('hospitals', []))} hospitals from Google Places")
-            return places_suggestions
+        
+        # Check if we got real data
+        if places_suggestions:
+            has_data = ((places_suggestions.get('hospitals') and len(places_suggestions.get('hospitals', [])) > 0) or
+                       (places_suggestions.get('police_stations') and len(places_suggestions.get('police_stations', [])) > 0) or
+                       (places_suggestions.get('mechanics') and len(places_suggestions.get('mechanics', [])) > 0) or
+                       (places_suggestions.get('hotels_restrooms') and len(places_suggestions.get('hotels_restrooms', [])) > 0))
+            
+            if has_data:
+                print(f"✅ Google Places API Success!")
+                print(f"   📊 Hospitals: {len(places_suggestions.get('hospitals', []))}")
+                print(f"   📊 Police: {len(places_suggestions.get('police_stations', []))}")
+                print(f"   📊 Mechanics: {len(places_suggestions.get('mechanics', []))}")
+                print(f"   📊 Safe Places: {len(places_suggestions.get('hotels_restrooms', []))}")
+                return places_suggestions
+            else:
+                print(f"⚠️ Google Places API returned empty results")
         else:
-            print(f"⚠️ Google Places API (New) returned no hospitals or failed")
+            print(f"⚠️ Google Places API returned None")
+            
     except Exception as e:
-        print(f"⚠️ Google Places API (New) failed with error: {e}")
-        import traceback
+        print(f"⚠️ Google Places API failed: {e}")
         traceback.print_exc()
     
-    # Generic fallback
+    # Generic fallback as last resort
+    print(f"📍 Using generic emergency suggestions for {lat:.4f}, {lng:.4f}")
     return {
         "hospitals": [
             {
-                "name": f"Nearest Hospital",
-                "address": f"Hospital near {lat:.4f}, {lng:.4f}",
+                "name": "Nearest Emergency Hospital",
+                "address": f"Emergency Medical Center near {lat:.4f}, {lng:.4f}",
                 "phone": "Emergency: 112",
-                "distance": "2.5 km",
-                "specialties": ["Emergency", "Trauma", "General Medicine"]
+                "distance": "~2.5 km",
+                "specialties": ["Emergency", "Trauma Care", "24/7 Service"]
+            },
+            {
+                "name": "General Hospital",
+                "address": f"Hospital near your location",
+                "phone": "Emergency: 102",
+                "distance": "~3.5 km",
+                "specialties": ["General Medicine", "Emergency Care"]
             }
         ],
         "police_stations": [
             {
-                "name": f"Local Police Station",
+                "name": "Local Police Station",
                 "address": f"Police Station near {lat:.4f}, {lng:.4f}",
                 "phone": "Emergency: 100",
-                "distance": "1.8 km",
+                "distance": "~1.8 km",
                 "type": "Local Police"
             }
         ],
         "mechanics": [
             {
-                "name": f"24/7 Auto Service",
-                "address": f"Auto Service near {lat:.4f}, {lng:.4f}",
+                "name": "24/7 Roadside Assistance",
+                "address": f"Emergency Auto Service near your location",
                 "phone": "Roadside: 1073",
-                "distance": "1.5 km",
+                "distance": "~1.5 km",
                 "services": ["24/7 Service", "Towing", "Emergency Repairs", "Battery Jump"]
             }
         ],
         "hotels_restrooms": [
             {
-                "name": f"Safe Haven Hotel",
+                "name": "Safe Haven Hotel",
                 "address": f"Hotel near {lat:.4f}, {lng:.4f}",
-                "phone": "Emergency: 112",
-                "distance": "2.1 km",
+                "phone": "Reception: Emergency",
+                "distance": "~2.1 km",
                 "amenities": ["24/7 Reception", "Safe Space", "Clean Restrooms", "Security"]
             }
         ],
         "emergency_tips": [
-            "Stay calm and move to a well-lit, populated area immediately",
-            "Call 100 for police, 102 for ambulance, or 112 for general emergency",
-            "Share your live location with trusted contacts using WhatsApp or Google Maps",
-            "If you feel unsafe, enter the nearest shop, hotel, or public building",
-            "Keep your phone charged and emergency numbers readily accessible",
-            "Trust your instincts - if something feels wrong, seek help immediately"
+            "🚨 Call 112 for immediate emergency assistance",
+            "📍 Share your live location with trusted contacts",
+            "🏃 Move to a well-lit, populated area if possible",
+            "📱 Keep your phone charged and emergency numbers saved",
+            "🛡️ Trust your instincts - if unsafe, seek help immediately",
+            "👥 Stay with others when possible, avoid isolated areas"
         ]
     }
 
@@ -1149,6 +1315,62 @@ def clear_all_data():
         print(f"❌ Clear Data Error: {e}")
         print(traceback.format_exc())
         return jsonify({"error": f"Server error: {str(e)}"}), 500
+
+@app.route("/gemini-status", methods=["GET"])
+def gemini_status():
+    """Check current Gemini AI configuration status"""
+    try:
+        status_info = {
+            "gemini_available": GEMINI_AVAILABLE,
+            "api_key_configured": bool(GEMINI_API_KEY),
+            "api_key_preview": f"{GEMINI_API_KEY[:10]}...{GEMINI_API_KEY[-4:]}" if GEMINI_API_KEY else None,
+            "model_configured": model is not None,
+            "model_name": model_name,
+            "available_models": []
+        }
+        
+        # Try to list available models
+        if GEMINI_AVAILABLE and GEMINI_API_KEY:
+            try:
+                genai.configure(api_key=GEMINI_API_KEY)
+                models = list(genai.list_models())
+                status_info["available_models"] = [m.name for m in models[:10]]  # First 10 models
+                status_info["total_models"] = len(models)
+            except Exception as e:
+                status_info["model_list_error"] = str(e)
+        
+        return jsonify(status_info), 200
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "gemini_available": GEMINI_AVAILABLE,
+            "api_key_configured": bool(GEMINI_API_KEY)
+        }), 500
+
+@app.route("/test-gemini-simple", methods=["GET"])
+def test_gemini_simple():
+    try:
+        if not GEMINI_AVAILABLE or not model:
+            return jsonify({
+                "status": "error",
+                "message": "Gemini not configured",
+                "available": GEMINI_AVAILABLE,
+                "model": str(model) if model else None
+            })
+                
+        # Simple test
+        response = model.generate_content("Say 'Hello, I am working!' in JSON format: {\"message\": \"your response\"}")
+        return jsonify({
+            "status": "success",
+            "response": response.text,
+            "model": str(model)
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        })
 
 @app.route("/test-gemini", methods=["POST", "OPTIONS"])
 def test_gemini():
