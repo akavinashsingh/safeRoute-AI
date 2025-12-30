@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SafeRoute</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    
+    <script src="main.js"></script>
+    
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDshT7uMl6hfy_sXU3YJbHcJmn2IPA1cY4&libraries=places,visualization&callback=initMap" async defer></script>
+</head>
+<body>
+
+    <nav class="navbar">
+        <div class="brand-container">
+            <div class="logo-text">SafeRoute</div>
+            <div class="divider">|</div>
+            <div class="slogan-container">
+                <div class="slogan-wrapper">
+                    <div class="slogan">Navigating You Safely</div>
+                    <div class="slogan">Empowering Women Safety</div>
+                    <div class="slogan">Real-Time Crime Analytics</div>
+                    <div class="slogan">Community Driven Support</div>
+                    <div class="slogan">Reach Home Securely</div>
+                    <div class="slogan">Navigating You Safely</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="nav-actions">
+            <button onclick="openModal('tips-modal')" class="nav-btn outline-btn"><i class="fa-solid fa-shield-halved"></i> Tips</button>
+            <button onclick="openModal('helpline-modal')" class="nav-btn outline-btn"><i class="fa-solid fa-phone"></i> Help</button>
+            <button onclick="openModal('community-modal')" class="nav-btn community-btn"><i class="fa-solid fa-comments"></i> Community</button>
+            <button onclick="openModal('sos-modal')" class="nav-btn sos-btn"><i class="fa-solid fa-tower-broadcast"></i> SOS</button>
+            <button onclick="testGeminiAI()" class="nav-btn" style="background: #8b5cf6; color: white;" title="Test AI"><i class="fa-solid fa-robot"></i> AI</button>
+            <button onclick="testNavigation()" class="nav-btn" style="background: #059669; color: white;" title="Test Navigation"><i class="fa-solid fa-route"></i> Nav</button>
+            <button onclick="testEmergencyModal()" class="nav-btn" style="background: #dc3545; color: white;" title="Test Emergency Modal"><i class="fa-solid fa-ambulance"></i> Test</button>
+            <button onclick="clearAllData()" class="nav-btn clear-btn" title="Clear Data"><i class="fa-solid fa-trash"></i></button>
+            <button onclick="toggleNightMode()" class="nav-btn icon-only" title="Theme"><i class="fa-solid fa-moon"></i></button>
+        </div>
+    </nav>
+
+    <div class="main-layout">
+        <aside class="sidebar">
+            <div class="search-container">
+                <h3><i class="fa-solid fa-map-location-dot"></i> Plan Journey</h3>
+                
+                <div class="input-wrapper">
+                    <i class="fa-solid fa-location-dot input-icon"></i>
+                    <input type="text" id="source" placeholder="Starting Point" value="Hyderabad">
+                    <button onclick="getCurrentLocationForInput()" class="locate-me-btn" title="Use My Current Location">
+                        <i class="fa-solid fa-crosshairs"></i>
+                    </button>
+                </div>
+
+                <div class="input-wrapper">
+                    <i class="fa-solid fa-flag-checkered input-icon"></i>
+                    <input type="text" id="destination" placeholder="Destination" value="Gachibowli">
+                </div>
+
+                <button onclick="findRoutes()" class="primary-btn">
+                    <i class="fa-solid fa-magnifying-glass"></i> Analyze Route Safety
+                </button>
+            </div>
+
+            <div id="routes-container" class="routes-container">
+                <div id="routes-list">
+                    <div class="empty-state">
+                        <i class="fa-solid fa-route empty-icon"></i>
+                        <p>Enter locations to generate AI safety scores.</p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="map-wrapper">
+            <div id="map"></div>
+        </main>
+    </div>
+
+    <div id="community-modal" class="modal-overlay" onclick="closeModal(event, 'community-modal')">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-users"></i> Community Report</h2>
+                <button class="close-btn" onclick="closeModal(null, 'community-modal')">×</button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label">Incident Type</label>
+                <select id="feedback-type" class="modern-select">
+                    <option value="accident">🚨 Accident</option>
+                    <option value="danger">⚠️ Suspicious Activity</option>
+                    <option value="harassment">🚫 Harassment</option>
+                    <option value="theft">💼 Theft / Snatching</option>
+                    <option value="traffic">🚦 Heavy Traffic</option>
+                    <option value="pothole">🕳️ Road Damage</option>
+                </select>
+                
+                <label class="form-label">Description</label>
+                <textarea id="feedback-desc" rows="3" class="modern-textarea" placeholder="Describe the location and incident details..."></textarea>
+                
+                <button onclick="submitFeedback()" class="primary-btn full-width">Submit Report</button>
+                
+                <div class="separator"><span>Recent Alerts</span></div>
+                <div id="feedback-list" class="feedback-scroll">
+                    </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="sos-modal" class="modal-overlay" onclick="closeModal(event, 'sos-modal')">
+        <div class="modal-content">
+            <div class="modal-header danger-header">
+                <h2><i class="fa-solid fa-triangle-exclamation"></i> Emergency SOS</h2>
+                <button class="close-btn" onclick="closeModal(null, 'sos-modal')">×</button>
+            </div>
+            <div class="modal-body text-center">
+                <p>This will broadcast your live location to all admins immediately.</p>
+                <div class="pulse-container">
+                    <button onclick="sendEmergencyAlert()" class="big-sos-btn">SOS</button>
+                </div>
+                <p class="sos-note">Only use in case of real emergency.<br>Your IP and Location will be tracked.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="tips-modal" class="modal-overlay" onclick="closeModal(event, 'tips-modal')">
+        <div class="modal-content">
+            <div class="modal-header"><h2>🛡️ Safety Precautions</h2><button class="close-btn" onclick="closeModal(null, 'tips-modal')">×</button></div>
+            <div class="modal-body">
+                <ul class="tips-list">
+                    <li><i class="fa-solid fa-check check-icon"></i> Share your live location with trusted family/friends.</li>
+                    <li><i class="fa-solid fa-check check-icon"></i> Stay in well-lit, populated areas; avoid shortcuts.</li>
+                    <li><i class="fa-solid fa-check check-icon"></i> Keep your phone charged and emergency numbers saved.</li>
+                    <li><i class="fa-solid fa-check check-icon"></i> Trust your instincts; if a situation feels wrong, leave.</li>
+                    <li><i class="fa-solid fa-check check-icon"></i> Walk with confidence and be aware of surroundings.</li>
+                    <li><i class="fa-solid fa-check check-icon"></i> Avoid using headphones in isolated areas.</li>
+                    <li><i class="fa-solid fa-check check-icon"></i> Check the vehicle license plate before entering a cab.</li>
+                    <li><i class="fa-solid fa-check check-icon"></i> If followed, head to a shop, police station, or crowded area.</li>
+                    <li><i class="fa-solid fa-check check-icon"></i> Carry a whistle or safety alarm if possible.</li>
+                    <li><i class="fa-solid fa-check check-icon"></i> Yell "Fire" instead of "Help" to attract more attention.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div id="helpline-modal" class="modal-overlay" onclick="closeModal(event, 'helpline-modal')">
+        <div class="modal-content">
+            <div class="modal-header"><h2>📞 Important Numbers</h2><button class="close-btn" onclick="closeModal(null, 'helpline-modal')">×</button></div>
+            <div class="modal-body">
+                <div class="helpline-grid">
+                    <div class="helpline-card"><span class="hl-number">100</span><span class="hl-label">Police</span></div>
+                    <div class="helpline-card"><span class="hl-number">1091</span><span class="hl-label">Women Helpline</span></div>
+                    <div class="helpline-card"><span class="hl-number">112</span><span class="hl-label">National SOS</span></div>
+                    <div class="helpline-card"><span class="hl-number">102</span><span class="hl-label">Ambulance</span></div>
+                    <div class="helpline-card"><span class="hl-number">101</span><span class="hl-label">Fire</span></div>
+                    <div class="helpline-card"><span class="hl-number">1098</span><span class="hl-label">Child Helpline</span></div>
+                    <div class="helpline-card"><span class="hl-number">1930</span><span class="hl-label">Cyber Crime</span></div>
+                    <div class="helpline-card"><span class="hl-number">1073</span><span class="hl-label">Road Accident</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="loading-overlay">
+        <div class="radar-spinner"></div>
+        <h3 id="loading-text">Analyzing Routes...</h3>
+        <p>AI is checking crime data & safety factors</p>
+    </div>
+
+    <!-- Emergency Suggestions Modal -->
+    <div id="emergency-suggestions-modal" class="modal-overlay" onclick="closeEmergencySuggestionsModal()">
+        <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 600px; max-height: 90vh;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: white;">
+                <h2><i class="fa-solid fa-robot"></i> AI Emergency Assistance</h2>
+                <button class="close-btn" onclick="closeEmergencySuggestionsModal()" style="color: white;">×</button>
+            </div>
+            <div class="modal-body" id="emergency-suggestions-body" style="padding: 0;">
+                <!-- AI suggestions will be populated here -->
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
