@@ -14,6 +14,16 @@ from flask_socketio import SocketIO, emit
 from math import radians, cos, sin, asin, sqrt
 import traceback
 
+# Load environment variables
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("✅ Environment variables loaded from .env file")
+except ImportError:
+    print("⚠️ python-dotenv not installed. Using system environment variables only.")
+except Exception as e:
+    print(f"⚠️ Could not load .env file: {e}")
+
 # Groq AI imports (primary AI provider)
 try:
     from groq import Groq
@@ -43,10 +53,19 @@ def after_request(response):
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-API_KEY = "AIzaSyDshT7uMl6hfy_sXU3YJbHcJmn2IPA1cY4"
+# Load API keys from environment variables
+API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
+if not API_KEY:
+    print("⚠️ WARNING: GOOGLE_MAPS_API_KEY not found in environment variables!")
+    print("Using fallback API key. Please set GOOGLE_MAPS_API_KEY in .env file for production.")
+    API_KEY = "AIzaSyDshT7uMl6hfy_sXU3YJbHcJmn2IPA1cY4"  # Fallback for development
 
 # Groq AI Configuration (Primary AI Provider - Fast & Unlimited)
-GROQ_API_KEY = os.getenv('GROQ_API_KEY', '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')
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+if not GROQ_API_KEY:
+    print("⚠️ WARNING: GROQ_API_KEY not found in environment variables!")
+    print("Using fallback API key. Please set GROQ_API_KEY in .env file for production.")
+    GROQ_API_KEY = "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"  # Fallback for development
 groq_client = None
 
 if GROQ_AVAILABLE and GROQ_API_KEY:
@@ -912,6 +931,14 @@ def update_alert(alert_id):
         print(f"Update Error: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route("/get-maps-config", methods=["GET"])
+def get_maps_config():
+    """Serve Google Maps API key securely to frontend"""
+    return jsonify({
+        "google_maps_api_key": API_KEY,
+        "status": "success"
+    })
+
 @app.route("/get-routes", methods=["POST", "OPTIONS"])
 def get_routes():
     # Handle CORS preflight
@@ -1283,5 +1310,12 @@ if __name__ == "__main__":
     print("🚨 SOS Alert System: Active")
     print("🌐 Google Places API (New): Primary Emergency Service Provider")
     print("🤖 Groq AI: Backup Emergency Assistant")
-    print("🌐 API Running on: http://localhost:5000")
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    
+    # Get port from environment variable (Render uses PORT env var)
+    port = int(os.environ.get('PORT', 5000))
+    host = '0.0.0.0'  # Bind to all interfaces for deployment
+    
+    print(f"🌐 API Running on: http://{host}:{port}")
+    
+    # Use eventlet for production deployment
+    socketio.run(app, host=host, port=port, debug=False)

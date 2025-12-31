@@ -1,6 +1,9 @@
 # SafeRoute AI - Python Dependencies
 # Install with: pip install -r requirements.txt
 
+# Environment Variables
+python-dotenv==1.0.0
+
 # Core Web Framework
 flask==2.3.3
 

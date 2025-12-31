@@ -3,7 +3,44 @@ let map, directionsService;
 let rendererArray = [], currentRoutes = [], lastDirectionsResult = null;
 let userMarker = null, crimeMarkers = [], feedbackMarkers = [];
 let allFeedbacks = [];
-const socket = io("http://localhost:5000");
+const socket = io(window.BACKEND_URL);
+
+/* --- Secure Google Maps API Loader --- */
+async function loadGoogleMapsAPI() {
+    try {
+        console.log('🔐 Loading Google Maps API securely...');
+        
+        // Get API key from backend securely
+        const response = await fetch(`${window.BACKEND_URL}/get-maps-config`);
+        const config = await response.json();
+        
+        if (!config.google_maps_api_key) {
+            throw new Error('Google Maps API key not available');
+        }
+        
+        // Load Google Maps API dynamically
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${config.google_maps_api_key}&libraries=places,visualization&callback=initMap`;
+        script.async = true;
+        script.defer = true;
+        
+        // Add error handling
+        script.onerror = () => {
+            console.error('❌ Failed to load Google Maps API');
+            alert('Failed to load Google Maps. Please check your internet connection.');
+        };
+        
+        document.head.appendChild(script);
+        console.log('✅ Google Maps API script loaded');
+        
+    } catch (error) {
+        console.error('❌ Error loading Google Maps API:', error);
+        alert('Failed to load Google Maps configuration. Please refresh the page.');
+    }
+}
+
+// Load Google Maps API when page loads
+document.addEventListener('DOMContentLoaded', loadGoogleMapsAPI);
 
 /* --- Config --- */
 const routeColors = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6"];
@@ -115,7 +152,7 @@ window.findRoutes = function () {
 };
 
 function sendToBackendForAnalysis(source, destination) {
-  fetch("http://localhost:5000/get-routes", {
+  fetch(`${window.BACKEND_URL}/get-routes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source, destination })
@@ -141,7 +178,7 @@ function sendToBackendForAnalysis(source, destination) {
     .catch((err) => {
       stopLoadingAnimation();
       console.error(err);
-      alert("Cannot connect to backend (http://localhost:5000). Ensure 'python app.py' is running.");
+      alert(`Cannot connect to backend (${window.BACKEND_URL}). Ensure backend server is running.`);
     });
 }
 
@@ -304,14 +341,14 @@ window.sendEmergencyAlert = function() {
             try {
                 console.log('📡 Sending SOS to backend...');
                 console.log('📍 Coordinates:', { lat, lng, accuracy });
-                console.log('🌐 Backend URL:', 'http://localhost:5000/send-alert');
+                console.log('🌐 Backend URL:', `${window.BACKEND_URL}/send-alert`);
                 console.log('🌐 Current page URL:', window.location.href);
                 
                 // Add timeout and better error handling
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
                 
-                const response = await fetch('http://localhost:5000/send-alert', {
+                const response = await fetch(`${window.BACKEND_URL}/send-alert`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ lat: lat, lng: lng, accuracy: accuracy }),
@@ -386,11 +423,11 @@ window.sendEmergencyAlert = function() {
                 if (error.name === 'AbortError') {
                     errorMessage += `\\n\\n⏱️ Request timed out after 30 seconds.\\n\\nPlease check:\\n- Internet connection\\n- Backend server is running\\n- No firewall blocking the connection`;
                 } else if (error.message.includes('Failed to fetch') || error.message.includes('fetch')) {
-                    errorMessage = `❌ Connection failed to backend server.\\n\\n🔗 This usually means:\\n- Backend server is not running\\n- CORS policy blocking the request\\n- Network connectivity issues\\n\\n🛠️ Solutions:\\n1. Make sure backend is running: python app.py\\n2. Check if localhost:5000 is accessible\\n3. Try refreshing the page\\n4. Check browser console for more details`;
+                    errorMessage = `❌ Connection failed to backend server.\\n\\n🔗 This usually means:\\n- Backend server is not running\\n- CORS policy blocking the request\\n- Network connectivity issues\\n\\n🛠️ Solutions:\\n1. Make sure backend is running\\n2. Check if ${window.BACKEND_URL} is accessible\\n3. Try refreshing the page\\n4. Check browser console for more details`;
                 } else if (error.message.includes('NetworkError')) {
                     errorMessage += `\\n\\n🌐 Network error occurred.\\n\\nPlease check your internet connection and try again.`;
                 } else {
-                    errorMessage += `\\n\\nPlease check:\\n- Internet connection\\n- Backend server is running (python app.py)\\n- Backend is accessible at localhost:5000`;
+                    errorMessage += `\\n\\nPlease check:\\n- Internet connection\\n- Backend server is running\\n- Backend is accessible at ${window.BACKEND_URL}`;
                 }
                 
                 alert(errorMessage);
@@ -770,7 +807,7 @@ window.submitFeedback = async function() {
             lng: position.coords.longitude
         };
        
-        const response = await fetch('http://localhost:5000/post-feedback', {
+        const response = await fetch(`${window.BACKEND_URL}/post-feedback`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -951,7 +988,7 @@ window.closeModal = function (e, id) {
 
 /* --- 10. Utility Functions --- */
 window.fetchFeedbackForRoute = function () {
-  fetch("http://localhost:5000/get-feedback")
+  fetch(`${window.BACKEND_URL}/get-feedback`)
     .then((r) => r.json())
     .then((d) => {
       allFeedbacks = d;
@@ -970,7 +1007,7 @@ window.clearAllData = async function () {
             console.log('🗑️ Clearing all data...');
             console.log('📡 Sending POST to /clear-all-data endpoint');
             
-            const response = await fetch("http://localhost:5000/clear-all-data", {
+            const response = await fetch(`${window.BACKEND_URL}/clear-all-data`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ confirmation: "DELETE_ALL_DATA" })  // ✅ FIX: Use 'confirmation'
@@ -1024,9 +1061,9 @@ window.testBackendConnection = async function() {
     
     try {
         console.log('🌐 Current page URL:', window.location.href);
-        console.log('🌐 Testing connection to: http://localhost:5000/ai-status');
+        console.log('🌐 Testing connection to:', `${window.BACKEND_URL}/ai-status`);
         
-        const response = await fetch('http://localhost:5000/ai-status', {
+        const response = await fetch(`${window.BACKEND_URL}/ai-status`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -1048,7 +1085,7 @@ window.testBackendConnection = async function() {
         let errorMessage = `❌ Backend Connection Test Failed:\\n\\n${error.message}`;
         
         if (error.message.includes('Failed to fetch')) {
-            errorMessage += `\\n\\n🔗 This means the backend server is not accessible.\\n\\n🛠️ Solutions:\\n1. Make sure backend is running: python app.py\\n2. Check if localhost:5000 is accessible in browser\\n3. Check for CORS or firewall issues\\n4. Try restarting the backend server`;
+            errorMessage += `\\n\\n🔗 This means the backend server is not accessible.\\n\\n🛠️ Solutions:\\n1. Make sure backend is running\\n2. Check if ${window.BACKEND_URL} is accessible in browser\\n3. Check for CORS or firewall issues\\n4. Try restarting the backend server`;
         }
         
         alert(errorMessage);

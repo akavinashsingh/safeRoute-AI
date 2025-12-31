@@ -5,6 +5,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="config.js"></script>
     <style>
         :root {
             --primary: #1e293b; --accent: #10b981; --danger: #ef4444; --link: #3b82f6;
@@ -107,7 +108,7 @@
     </div>
 
     <script>
-        const socket = io('http://localhost:5000');
+        const socket = io(window.BACKEND_URL);
         
         socket.on('connect', () => { 
             console.log('🔌 Admin: Connected to Server');
@@ -147,7 +148,7 @@
 
         async function loadAlerts() {
             try {
-                const res = await fetch('http://localhost:5000/get-all-alerts');
+                const res = await fetch(`${window.BACKEND_URL}/get-all-alerts`);
                 const alerts = await res.json();
                 
                 document.getElementById('stat-sos').innerText = alerts.filter(a => a.status === 'PENDING').length;
@@ -183,7 +184,7 @@
 
         async function loadFeedback() {
             try {
-                const res = await fetch('http://localhost:5000/get-feedback');
+                const res = await fetch(`${window.BACKEND_URL}/get-feedback`);
                 const reports = await res.json();
                 document.getElementById('stat-reports').innerText = reports.length;
 
@@ -214,7 +215,7 @@
         }
 
         async function resolveAlert(id) {
-            await fetch(`http://localhost:5000/update-alert/${id}`, {
+            await fetch(`${window.BACKEND_URL}/update-alert/${id}`, {
                 method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({status: 'RESOLVED'})
             });
             loadAlerts();
@@ -228,7 +229,7 @@
                     console.log('🗑️ Admin: Clearing all data...');
                     console.log('📡 Sending POST to /clear-all-data endpoint');
                     
-                    const response = await fetch('http://localhost:5000/clear-all-data', {
+                    const response = await fetch(`${window.BACKEND_URL}/clear-all-data`, {
                         method: 'POST', 
                         headers: {'Content-Type': 'application/json'}, 
                         body: JSON.stringify({confirmation: 'DELETE_ALL_DATA'})
