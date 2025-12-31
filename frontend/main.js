@@ -479,7 +479,7 @@ function displayEmergencySuggestions(suggestions, alertId, lat, lng, timestamp) 
                                     style="background:#28a745; color:white; border:none; padding:8px 15px; border-radius:5px; font-size:12px; cursor:pointer; font-weight:600;">
                                 <i class="fa-solid fa-phone"></i> Call Now
                             </button>
-                            <button onclick="navigateToEmergencyService('${hospital.name.replace(/'/g, "\\'")}', '${hospital.address.replace(/'/g, "\\'")}', ${lat}, ${lng});" 
+                            <button onclick="navigateToEmergencyService('${hospital.name.replace(/'/g, "\\'")}', ${hospital.lat || lat}, ${hospital.lng || lng}, ${lat}, ${lng});" 
                                     style="background:#007bff; color:white; border:none; padding:8px 15px; border-radius:5px; font-size:12px; cursor:pointer; font-weight:600;">
                                 <i class="fa-solid fa-route"></i> Navigate
                             </button>
@@ -507,7 +507,7 @@ function displayEmergencySuggestions(suggestions, alertId, lat, lng, timestamp) 
                                     style="background:#28a745; color:white; border:none; padding:8px 15px; border-radius:5px; font-size:12px; cursor:pointer; font-weight:600;">
                                 <i class="fa-solid fa-phone"></i> Call Now
                             </button>
-                            <button onclick="navigateToEmergencyService('${police.name.replace(/'/g, "\\'")}', '${police.address.replace(/'/g, "\\'")}', ${lat}, ${lng});" 
+                            <button onclick="navigateToEmergencyService('${police.name.replace(/'/g, "\\'")}', ${police.lat || lat}, ${police.lng || lng}, ${lat}, ${lng});" 
                                     style="background:#007bff; color:white; border:none; padding:8px 15px; border-radius:5px; font-size:12px; cursor:pointer; font-weight:600;">
                                 <i class="fa-solid fa-route"></i> Navigate
                             </button>
@@ -535,7 +535,7 @@ function displayEmergencySuggestions(suggestions, alertId, lat, lng, timestamp) 
                                     style="background:#28a745; color:white; border:none; padding:8px 15px; border-radius:5px; font-size:12px; cursor:pointer; font-weight:600;">
                                 <i class="fa-solid fa-phone"></i> Call Now
                             </button>
-                            <button onclick="navigateToEmergencyService('${mechanic.name.replace(/'/g, "\\'")}', '${mechanic.address.replace(/'/g, "\\'")}', ${lat}, ${lng});" 
+                            <button onclick="navigateToEmergencyService('${mechanic.name.replace(/'/g, "\\'")}', ${mechanic.lat || lat}, ${mechanic.lng || lng}, ${lat}, ${lng});" 
                                     style="background:#007bff; color:white; border:none; padding:8px 15px; border-radius:5px; font-size:12px; cursor:pointer; font-weight:600;">
                                 <i class="fa-solid fa-route"></i> Navigate
                             </button>
@@ -563,7 +563,7 @@ function displayEmergencySuggestions(suggestions, alertId, lat, lng, timestamp) 
                                     style="background:#28a745; color:white; border:none; padding:8px 15px; border-radius:5px; font-size:12px; cursor:pointer; font-weight:600;">
                                 <i class="fa-solid fa-phone"></i> Call Now
                             </button>
-                            <button onclick="navigateToEmergencyService('${place.name.replace(/'/g, "\\'")}', '${place.address.replace(/'/g, "\\'")}', ${lat}, ${lng});" 
+                            <button onclick="navigateToEmergencyService('${place.name.replace(/'/g, "\\'")}', ${place.lat || lat}, ${place.lng || lng}, ${lat}, ${lng});" 
                                     style="background:#007bff; color:white; border:none; padding:8px 15px; border-radius:5px; font-size:12px; cursor:pointer; font-weight:600;">
                                 <i class="fa-solid fa-route"></i> Navigate
                             </button>
@@ -658,9 +658,12 @@ window.callEmergencyService = function(phoneNumber) {
     }
 };
 
-window.navigateToEmergencyService = function(serviceName, serviceAddress, userLat, userLng) {
-    console.log(`🗺️ Navigating to: ${serviceName} at ${serviceAddress}`);
-    const confirmed = confirm(`🗺️ Navigate to Emergency Service?\\n\\n${serviceName}\\n${serviceAddress}\\n\\nThis will show directions on the map.`);
+window.navigateToEmergencyService = function(serviceName, serviceLat, serviceLng, userLat, userLng) {
+    console.log(`🗺️ Navigating to: ${serviceName}`);
+    console.log(`📍 Service GPS: ${serviceLat}, ${serviceLng}`);
+    console.log(`📍 User GPS: ${userLat}, ${userLng}`);
+    
+    const confirmed = confirm(`🗺️ Navigate to Emergency Service?\\n\\n${serviceName}\\n\\nThis will show directions on the map using exact GPS coordinates.`);
     
     if (confirmed) {
         try {
@@ -670,9 +673,10 @@ window.navigateToEmergencyService = function(serviceName, serviceAddress, userLa
                 directionsService = new google.maps.DirectionsService();
             }
             
+            // ✅ FIX: Use exact GPS coordinates instead of address
             const request = {
                 origin: new google.maps.LatLng(userLat, userLng),
-                destination: serviceAddress,
+                destination: new google.maps.LatLng(serviceLat, serviceLng),  // ✅ GPS COORDINATES
                 travelMode: google.maps.TravelMode.DRIVING
             };
             
@@ -697,9 +701,13 @@ window.navigateToEmergencyService = function(serviceName, serviceAddress, userLa
                     map.fitBounds(result.routes[0].bounds);
                     
                     console.log(`✅ Navigation set up for ${serviceName}`);
+                    console.log(`📏 Distance: ${result.routes[0].legs[0].distance.text}`);
+                    console.log(`⏱️ Duration: ${result.routes[0].legs[0].duration.text}`);
                 } else {
                     console.error('❌ Directions request failed:', status);
-                    const googleMapsUrl = `https://maps.google.com/maps?saddr=${userLat},${userLng}&daddr=${encodeURIComponent(serviceAddress)}`;
+                    // Fallback: Open in Google Maps app with GPS coordinates
+                    const googleMapsUrl = `https://maps.google.com/maps?saddr=${userLat},${userLng}&daddr=${serviceLat},${serviceLng}`;
+                    alert(`⚠️ Unable to show route in map.\\nOpening Google Maps...`);
                     window.open(googleMapsUrl, '_blank');
                 }
             });

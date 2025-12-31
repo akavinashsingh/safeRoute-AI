@@ -313,12 +313,15 @@ def get_nearby_places_with_google_api(lat, lng):
                         if 'doctor' in place_types:
                             specialties.append("Medical Care")
                         
+                        # ✅ FIX: Include GPS coordinates for accurate navigation
                         hospitals_with_distance.append({
                             "name": name,
                             "address": address,
                             "phone": phone,
                             "distance": distance_str,
                             "distance_km": distance,
+                            "lat": place_lat,  # ✅ GPS LATITUDE
+                            "lng": place_lng,  # ✅ GPS LONGITUDE
                             "specialties": specialties,
                             "rating": rating
                         })
@@ -331,10 +334,10 @@ def get_nearby_places_with_google_api(lat, lng):
             hospitals_with_distance.sort(key=lambda x: x['distance_km'])
             hospitals = hospitals_with_distance[:5]
             
-            # Remove distance_km from final output
+            # Remove distance_km from final output but KEEP lat/lng for navigation
             for hospital in hospitals:
                 del hospital['distance_km']
-                print(f"✅ Added hospital: {hospital['name']} - {hospital['distance']}")
+                print(f"✅ Added hospital: {hospital['name']} - {hospital['distance']} - GPS: ({hospital['lat']:.4f}, {hospital['lng']:.4f})")
                 
         else:
             print(f"❌ Google Places API HTTP error: {response.status_code}")
@@ -379,18 +382,22 @@ def get_nearby_places_with_google_api(lat, lng):
                     if place_lat and place_lng:
                         distance = calculate_distance(lat, lng, place_lat, place_lng)
                         distance_str = f"{distance:.1f} km"
+                        
+                        # ✅ FIX: Include GPS coordinates for accurate navigation
+                        police_stations.append({
+                            "name": name,
+                            "address": address,
+                            "phone": phone,
+                            "distance": distance_str,
+                            "lat": place_lat,  # ✅ GPS LATITUDE
+                            "lng": place_lng,  # ✅ GPS LONGITUDE
+                            "type": "Local Police"
+                        })
                     else:
-                        distance_str = "Distance unknown"
+                        # Skip if no GPS coordinates available
+                        continue
                     
-                    police_stations.append({
-                        "name": name,
-                        "address": address,
-                        "phone": phone,
-                        "distance": distance_str,
-                        "type": "Local Police"
-                    })
-                    
-                    print(f"✅ Added police station: {name} - {distance_str}")
+                    print(f"✅ Added police station: {name} - {distance_str} - GPS: ({place_lat:.4f}, {place_lng:.4f})")
                     
                 except Exception as e:
                     print(f"⚠️ Error processing police station: {e}")
@@ -437,18 +444,22 @@ def get_nearby_places_with_google_api(lat, lng):
                     if place_lat and place_lng:
                         distance = calculate_distance(lat, lng, place_lat, place_lng)
                         distance_str = f"{distance:.1f} km"
+                        
+                        # ✅ FIX: Include GPS coordinates for accurate navigation
+                        mechanics.append({
+                            "name": name,
+                            "address": address,
+                            "phone": phone,
+                            "distance": distance_str,
+                            "lat": place_lat,  # ✅ GPS LATITUDE
+                            "lng": place_lng,  # ✅ GPS LONGITUDE
+                            "services": ["Fuel", "Basic Repairs", "Emergency Service"]
+                        })
                     else:
-                        distance_str = "Distance unknown"
+                        # Skip if no GPS coordinates available
+                        continue
                     
-                    mechanics.append({
-                        "name": name,
-                        "address": address,
-                        "phone": phone,
-                        "distance": distance_str,
-                        "services": ["Fuel", "Basic Repairs", "Emergency Service"]
-                    })
-                    
-                    print(f"✅ Added gas station: {name} - {distance_str}")
+                    print(f"✅ Added gas station: {name} - {distance_str} - GPS: ({place_lat:.4f}, {place_lng:.4f})")
                     
                 except Exception as e:
                     print(f"⚠️ Error processing gas station: {e}")
@@ -495,18 +506,22 @@ def get_nearby_places_with_google_api(lat, lng):
                     if place_lat and place_lng:
                         distance = calculate_distance(lat, lng, place_lat, place_lng)
                         distance_str = f"{distance:.1f} km"
+                        
+                        # ✅ FIX: Include GPS coordinates for accurate navigation
+                        hotels.append({
+                            "name": name,
+                            "address": address,
+                            "phone": phone,
+                            "distance": distance_str,
+                            "lat": place_lat,  # ✅ GPS LATITUDE
+                            "lng": place_lng,  # ✅ GPS LONGITUDE
+                            "amenities": ["Safe Space", "Reception", "Restrooms", "Security"]
+                        })
                     else:
-                        distance_str = "Distance unknown"
+                        # Skip if no GPS coordinates available
+                        continue
                     
-                    hotels.append({
-                        "name": name,
-                        "address": address,
-                        "phone": phone,
-                        "distance": distance_str,
-                        "amenities": ["Safe Space", "Reception", "Restrooms", "Security"]
-                    })
-                    
-                    print(f"✅ Added hotel: {name} - {distance_str}")
+                    print(f"✅ Added hotel: {name} - {distance_str} - GPS: ({place_lat:.4f}, {place_lng:.4f})")
                     
                 except Exception as e:
                     print(f"⚠️ Error processing hotel: {e}")
