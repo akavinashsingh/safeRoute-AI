@@ -79,18 +79,18 @@
 <body>
     <div class="container">
         <h1>🚨 SafeRoute SOS Test</h1>
-        <p>This page tests the SOS functionality and Gemini AI integration.</p>
+        <p>This page tests the SOS functionality with Google Places API (Primary) and Groq AI (Backup).</p>
         
         <div class="status info">
             <strong>Backend Status:</strong> <span id="backend-status">Checking...</span>
         </div>
         
         <div class="status info">
-            <strong>Gemini AI Status:</strong> <span id="gemini-status">Checking...</span>
+            <strong>Google Places API Status:</strong> <span id="groq-status">Checking...</span>
         </div>
         
         <button class="test-btn" onclick="testBackend()">🔧 Test Backend Connection</button>
-        <button class="test-btn" onclick="testGemini()">🤖 Test Gemini AI</button>
+        <button class="test-btn" onclick="testGroq()">🌐 Test Google Places API</button>
         
         <button class="sos-btn" onclick="sendSOS()">🚨 SEND SOS ALERT</button>
         
@@ -118,28 +118,28 @@
             }
         }
         
-        // Test Gemini AI
-        async function testGemini() {
+        // Test Google Places API
+        async function testGroq() {
             try {
-                const response = await fetch(`${BACKEND_URL}/gemini-status`);
+                const response = await fetch(`${BACKEND_URL}/ai-status`);
                 const data = await response.json();
                 
-                if (data.gemini_available && data.model_configured) {
-                    document.getElementById('gemini-status').textContent = `✅ ${data.model_name}`;
-                    document.getElementById('gemini-status').parentElement.className = 'status success';
+                if (data.google_places_available) {
+                    document.getElementById('groq-status').textContent = `✅ Google Places API Available`;
+                    document.getElementById('groq-status').parentElement.className = 'status success';
                     
-                    addResult('✅ Gemini AI Status', `Model: ${data.model_name}, Available Models: ${data.total_models}`);
+                    addResult('✅ Google Places API Status', `Primary Service: ${data.primary_ai}, Groq Backup: ${data.groq_configured ? 'Available' : 'Not Available'}`);
                 } else {
-                    document.getElementById('gemini-status').textContent = '⚠️ Not Configured';
-                    document.getElementById('gemini-status').parentElement.className = 'status error';
+                    document.getElementById('groq-status').textContent = '⚠️ Not Available';
+                    document.getElementById('groq-status').parentElement.className = 'status error';
                     
-                    addResult('⚠️ Gemini AI Issues', 'Gemini AI not properly configured');
+                    addResult('⚠️ Google Places API Issues', 'Google Places API not available');
                 }
             } catch (error) {
-                document.getElementById('gemini-status').textContent = '❌ Failed';
-                document.getElementById('gemini-status').parentElement.className = 'status error';
+                document.getElementById('groq-status').textContent = '❌ Failed';
+                document.getElementById('groq-status').parentElement.className = 'status error';
                 
-                addResult('❌ Gemini AI Test Failed', error.message);
+                addResult('❌ Google Places API Test Failed', error.message);
             }
         }
         
@@ -258,7 +258,7 @@
         // Auto-test on page load
         window.onload = function() {
             testBackend();
-            testGemini();
+            testGroq();
         };
     </script>
 </body>

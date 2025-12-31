@@ -306,15 +306,22 @@ window.sendEmergencyAlert = function() {
                 if (response.ok) {
                     console.log("✅ SOS Alert sent successfully:", data);
                     
+                    // Enhanced check for emergency suggestions
                     if (!data.emergency_suggestions) {
                         console.error('⚠️ WARNING: No emergency_suggestions in response!');
+                        console.error('📦 Full response structure:', Object.keys(data));
+                        
                         modal.querySelector('.modal-body').innerHTML = `
                             <div style="text-align:center; padding:20px;">
                                 <div style="background:#d4edda; color:#155724; padding:15px; border-radius:8px; margin-bottom:20px;">
                                     <h3>🚨 SOS ALERT SENT!</h3>
                                     <p>Alert ID: ${data.alert_id}<br>Time: ${data.timestamp}</p>
                                 </div>
-                                <p>Emergency services have been notified.</p>
+                                <div style="background:#fff3cd; color:#856404; padding:15px; border-radius:6px; margin-bottom:15px;">
+                                    <p><strong>⚠️ Emergency services data not available</strong></p>
+                                    <p>Your alert has been sent to emergency responders.</p>
+                                    <p><strong>Call 112 for immediate assistance</strong></p>
+                                </div>
                                 <button onclick="closeModal(null, 'sos-modal')" class="primary-btn">Close</button>
                             </div>
                         `;
@@ -322,11 +329,16 @@ window.sendEmergencyAlert = function() {
                     }
                     
                     console.log("📋 About to call displayEmergencySuggestions...");
+                    console.log("📊 Emergency suggestions structure:", Object.keys(data.emergency_suggestions));
+                    console.log("📊 Hospitals count:", data.emergency_suggestions.hospitals?.length || 0);
+                    console.log("📊 Police count:", data.emergency_suggestions.police_stations?.length || 0);
+                    
                     try {
                         displayEmergencySuggestions(data.emergency_suggestions, data.alert_id, lat, lng, data.timestamp);
                         console.log("✅ displayEmergencySuggestions called successfully");
                     } catch (displayError) {
                         console.error("❌ Error in displayEmergencySuggestions:", displayError);
+                        console.error("❌ Error stack:", displayError.stack);
                         alert(`❌ Error displaying emergency services: ${displayError.message}`);
                     }
                 } else {
@@ -400,9 +412,12 @@ function displayEmergencySuggestions(suggestions, alertId, lat, lng, timestamp) 
         
         console.log('🔍 Emergency modal element:', emergencyModal);
         console.log('🔍 Emergency body element:', emergencyBody);
+        console.log('🔍 Modal computed style:', window.getComputedStyle(emergencyModal));
         
         if (!emergencyModal || !emergencyBody) {
             console.error('❌ Emergency modal elements not found!');
+            console.error('Available elements with emergency in ID:', 
+                Array.from(document.querySelectorAll('[id*="emergency"]')).map(el => el.id));
             alert('❌ ERROR: Emergency modal not found in DOM!');
             return;
         }
@@ -590,7 +605,19 @@ function displayEmergencySuggestions(suggestions, alertId, lat, lng, timestamp) 
         console.log('👁️ Showing emergency modal...');
         emergencyModal.classList.add('active');
         emergencyModal.style.display = 'flex';
-        emergencyModal.style.zIndex = '10000';
+        emergencyModal.style.zIndex = '99999';
+        emergencyModal.style.position = 'fixed';
+        emergencyModal.style.top = '0';
+        emergencyModal.style.left = '0';
+        emergencyModal.style.width = '100%';
+        emergencyModal.style.height = '100%';
+        
+        // Add click handler to close modal when clicking outside
+        emergencyModal.onclick = function(event) {
+            if (event.target === emergencyModal) {
+                closeEmergencySuggestionsModal();
+            }
+        };
         
         // Force scroll to top
         emergencyBody.scrollTop = 0;
@@ -917,12 +944,11 @@ window.testBackendConnection = async function() {
     
     try {
         console.log('🌐 Current page URL:', window.location.href);
-        console.log('🌐 Testing connection to: http://localhost:5000/test-gemini');
+        console.log('🌐 Testing connection to: http://localhost:5000/ai-status');
         
-        const response = await fetch('http://localhost:5000/test-gemini', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat: 17.3850, lng: 78.4867 })
+        const response = await fetch('http://localhost:5000/ai-status', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
         });
         
         console.log('📨 Response status:', response.status);
@@ -931,7 +957,7 @@ window.testBackendConnection = async function() {
         if (response.ok) {
             const data = await response.json();
             console.log('✅ Backend connection successful!', data);
-            alert(`✅ Backend Connection Test Successful!\\n\\nGemini AI: ${data.gemini_available ? 'Available' : 'Not Available'}\\nModel Configured: ${data.model_configured ? 'Yes' : 'No'}\\n\\nFound:\\n• ${data.suggestions.hospitals?.length || 0} Hospitals\\n• ${data.suggestions.police_stations?.length || 0} Police Stations\\n• ${data.suggestions.mechanics?.length || 0} Mechanics\\n• ${data.suggestions.hotels_restrooms?.length || 0} Safe Places`);
+            alert(`✅ Backend Connection Test Successful!\\n\\nGroq AI: ${data.groq_configured ? 'Available' : 'Not Available'}\\nGoogle Places API: ${data.google_places_available ? 'Available' : 'Not Available'}\\n\\nPrimary AI: ${data.primary_ai}`);
         } else {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
@@ -949,15 +975,96 @@ window.testBackendConnection = async function() {
     }
 };
 
-window.testGeminiAI = async function() {
-    // Test backend connection and Gemini AI
-    await testBackendConnection();
+window.testBackendSOS = async function() {
+    console.log('🧪 Testing SOS endpoint with Google Places API (Primary) + Groq AI (Backup)...');
+    
+    try {
+        console.log('🌐 Testing connection to: http://localhost:5000/send-alert');
+        
+        const response = await fetch('http://localhost:5000/send-alert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                lat: 17.3850, 
+                lng: 78.4867,
+                accuracy: 10
+            })
+        });
+        
+        console.log('📨 Response status:', response.status);
+        console.log('📨 Response ok:', response.ok);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        console.log('✅ SOS Response:', data);
+        
+        if (data.emergency_suggestions) {
+            console.log('✅ Emergency suggestions received!');
+            console.log('📊 Hospitals:', data.emergency_suggestions.hospitals?.length || 0);
+            console.log('📊 Police:', data.emergency_suggestions.police_stations?.length || 0);
+            console.log('📊 Mechanics:', data.emergency_suggestions.mechanics?.length || 0);
+            console.log('📊 Safe Places:', data.emergency_suggestions.hotels_restrooms?.length || 0);
+            
+            alert(`✅ SOS Backend Test Successful!\\n\\nAlert ID: ${data.alert_id}\\n\\nEmergency Services Found:\\n• ${data.emergency_suggestions.hospitals?.length || 0} Hospitals\\n• ${data.emergency_suggestions.police_stations?.length || 0} Police Stations\\n• ${data.emergency_suggestions.mechanics?.length || 0} Mechanics\\n• ${data.emergency_suggestions.hotels_restrooms?.length || 0} Safe Places\\n\\nCheck console for full details.`);
+            
+            // Optionally display the suggestions
+            displayEmergencySuggestions(
+                data.emergency_suggestions, 
+                data.alert_id, 
+                17.3850, 
+                78.4867, 
+                data.timestamp
+            );
+        } else {
+            console.error('❌ No emergency suggestions in response');
+            alert(`⚠️ SOS Backend Response Missing Emergency Data\\n\\nResponse received but no emergency_suggestions found.\\n\\nAlert ID: ${data.alert_id}\\n\\nCheck backend logs for details.`);
+        }
+    } catch (error) {
+        console.error('❌ SOS Test failed:', error);
+        
+        let errorMessage = `❌ SOS Backend Test Failed:\\n\\n${error.message}`;
+        
+        if (error.message.includes('Failed to fetch')) {
+            errorMessage += `\\n\\n🔗 This means the backend server is not accessible.\\n\\n🛠️ Solutions:\\n1. Make sure backend is running: python app.py\\n2. Check if localhost:5000 is accessible in browser\\n3. Check for CORS or firewall issues\\n4. Try restarting the backend server`;
+        }
+        
+        alert(errorMessage);
+    }
+};
+
+window.testAIStatus = async function() {
+    console.log('🧪 Testing AI Status (Google Places Primary + Groq Backup)...');
+    
+    try {
+        const response = await fetch('http://localhost:5000/ai-status');
+        const data = await response.json();
+        
+        console.log('✅ AI Status:', data);
+        
+        let statusMessage = `🤖 AI Systems Status:\\n\\n`;
+        statusMessage += `🚀 Primary AI: ${data.primary_ai}\\n\\n`;
+        statusMessage += `🔥 Groq AI: ${data.groq_configured ? '✅ Configured' : '❌ Not Available'}\\n`;
+        if (data.groq_test_success !== undefined) {
+            statusMessage += `   Test: ${data.groq_test_success ? '✅ Working' : '❌ Failed'}\\n`;
+        }
+        statusMessage += `🌐 Google Places: ${data.google_places_available ? '✅ Available' : '❌ Not Available'}\\n`;
+        
+        alert(statusMessage);
+        
+    } catch (error) {
+        console.error('❌ AI Status test failed:', error);
+        alert(`❌ AI Status Test Failed:\\n\\n${error.message}`);
+    }
 };
 
 window.testEmergencyModal = function() {
-    console.log('🧪 Testing emergency modal with real Gemini AI data...');
+    console.log('🧪 Testing emergency modal with real Google Places data...');
     
-    // Use the actual response structure from Gemini AI
+    // Use the actual response structure from Google Places API
     const testSuggestions = {
         "hospitals": [
             {
@@ -1012,7 +1119,7 @@ window.testEmergencyModal = function() {
         ]
     };
     
-    console.log('📋 Calling displayEmergencySuggestions with real Gemini data...');
+    console.log('📋 Calling displayEmergencySuggestions with real Google Places data...');
     displayEmergencySuggestions(testSuggestions, 999, 17.3850, 78.4867, new Date().toISOString());
     console.log('✅ Test function called');
 };

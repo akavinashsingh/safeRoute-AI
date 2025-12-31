@@ -14,13 +14,13 @@ from flask_socketio import SocketIO, emit
 from math import radians, cos, sin, asin, sqrt
 import traceback
 
-# Gemini AI imports
+# Groq AI imports (primary AI provider)
 try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
+    from groq import Groq
+    GROQ_AVAILABLE = True
 except ImportError:
-    GEMINI_AVAILABLE = False
-    print("⚠️ Gemini AI not available. Install with: pip install google-generativeai")
+    GROQ_AVAILABLE = False
+    print("⚠️ Groq not available. Install: pip install groq")
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -45,76 +45,30 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 API_KEY = "AIzaSyDshT7uMl6hfy_sXU3YJbHcJmn2IPA1cY4"
 
-# Gemini AI Configuration with proper verification
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyDAa1KJkZpJFeSKG-3tRfWC0jwWW-9r7_M')  # Updated API key
-model = None
-model_name = None
+# Groq AI Configuration (Primary AI Provider - Fast & Unlimited)
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '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')
+groq_client = None
 
-if GEMINI_AVAILABLE and GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    
-    # Validate API key first
-    print(f"🔑 Testing Gemini API key: {GEMINI_API_KEY[:10]}...{GEMINI_API_KEY[-4:]}")
-    
+if GROQ_AVAILABLE and GROQ_API_KEY:
     try:
-        # Test API key validity by listing models
-        available_models = list(genai.list_models())
-        print(f"✅ API key valid - found {len(available_models)} available models")
-        for model_info in available_models[:5]:  # Show first 5 models
-            print(f"   📋 Available: {model_info.name}")
-    except Exception as api_error:
-        print(f"❌ API key validation failed: {api_error}")
-        print("🔧 Please check:")
-        print("   1. API key is correct")
-        print("   2. API key has proper permissions")
-        print("   3. Billing is enabled (if required)")
-        print("   4. Visit: https://aistudio.google.com/app/apikey")
-        model = None
-        model_name = None
-    else:
-        # Test different FREE model names with separate quotas (Updated for 2024/2025)
-        model_candidates = [
-            'models/gemini-2.0-flash-lite',        # Lighter model - higher quota limit
-            'models/gemini-2.0-flash-lite-001',    # Specific lite version
-            'models/gemini-2.0-flash',             # 2.0 model - separate quota from 2.5
-            'models/gemini-2.0-flash-001',         # Specific 2.0 version
-            'models/gemini-2.5-flash',             # Latest but may hit quota first
-            'models/gemini-1.5-flash',             # Previous generation (if available)
-            'models/gemini-1.5-pro',               # Previous pro model (if available)
-            'gemini-2.0-flash-lite',              # Without models/ prefix
-            'gemini-2.0-flash',                    # Without models/ prefix
-            'gemini-1.5-flash',                    # Without models/ prefix
-            'gemini-pro',                          # Legacy fallback
-        ]
+        groq_client = Groq(api_key=GROQ_API_KEY)
+        print("✅ Groq AI configured successfully")
+        print(f"🔑 Groq API Key: {GROQ_API_KEY[:10]}...{GROQ_API_KEY[-4:]}")
         
-        for candidate in model_candidates:
-            try:
-                print(f"🧪 Testing Gemini model: {candidate}")
-                test_model = genai.GenerativeModel(candidate)
-                
-                # Test with a simple prompt to verify it works
-                test_response = test_model.generate_content("Hello, respond with just 'OK'")
-                test_text = test_response.text.strip()
-                
-                if test_text and len(test_text) > 0:
-                    model = test_model
-                    model_name = candidate
-                    print(f"✅ Gemini AI configured successfully with {candidate}")
-                    print(f"✅ Test response: {test_text}")
-                    break
-                else:
-                    print(f"⚠️ Model {candidate} responded but with empty text")
-                    
-            except Exception as e:
-                print(f"❌ Model {candidate} failed: {str(e)}")
-                continue
-        
-        if not model:
-            print("❌ Could not configure any Gemini model - all candidates failed")
-            print("🔄 Will use Google Places API fallback for emergency suggestions")
+        # Test Groq connection
+        test_response = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": "Say 'OK' if you're working"}],
+            model="llama-3.1-8b-instant",  # Updated to current model
+            max_tokens=10
+        )
+        print(f"✅ Groq test successful: {test_response.choices[0].message.content}")
+    except Exception as e:
+        print(f"❌ Groq configuration failed: {e}")
+        print("🔄 Will use Google Places API as primary provider")
+        groq_client = None
 else:
-    print("⚠️ Gemini AI not configured - missing library or API key")
-    print("🔄 Will use Google Places API fallback for emergency suggestions")
+    print("⚠️ Groq AI not configured - missing library or API key")
+    print("🔄 Will use Google Places API as primary provider")
 
 # Crime Database for Route Analysis
 CRIME_DATABASE = {
@@ -587,59 +541,28 @@ def get_nearby_places_with_google_api(lat, lng):
         traceback.print_exc()
         return None
 
-def get_emergency_suggestions_with_ai(lat, lng):
+def get_emergency_suggestions_with_groq(lat, lng):
     """
-    Use Gemini AI to find nearby emergency services and provide safety suggestions
-    ENHANCED VERSION with multiple free model fallbacks for quota limits
+    Use Groq AI to find nearby emergency services and provide safety suggestions
+    FAST & UNLIMITED - Primary AI provider
     """
-    if not GEMINI_AVAILABLE:
-        print("⚠️ Gemini AI not available, using fallback")
+    if not GROQ_AVAILABLE or not groq_client:
+        print("⚠️ Groq AI not available, using fallback")
         return get_fallback_emergency_suggestions(lat, lng)
     
-    # List of free models to try (each has separate quota limits)
-    free_models_to_try = [
-        'models/gemini-2.0-flash-lite',        # Lighter model - higher quota
-        'models/gemini-2.0-flash-lite-001',    # Specific lite version
-        'models/gemini-2.0-flash',             # 2.0 model - separate quota
-        'models/gemini-2.0-flash-001',         # Specific 2.0 version
-        'models/gemini-2.5-flash',             # Latest (may be quota limited)
-    ]
-    
-    # If we have a configured model, try it first
-    models_to_test = []
-    if model and model_name:
-        models_to_test.append((model, model_name))
-    
-    # Add other free models to try
-    for model_name_candidate in free_models_to_try:
-        if model_name_candidate != model_name:  # Don't duplicate the current model
-            try:
-                test_model = genai.GenerativeModel(model_name_candidate)
-                models_to_test.append((test_model, model_name_candidate))
-            except Exception as e:
-                print(f"⚠️ Could not create model {model_name_candidate}: {e}")
-                continue
-    
-    # Try each model until one works
-    for attempt_model, attempt_model_name in models_to_test:
-        try:
-            print(f"🤖 Trying Gemini model: {attempt_model_name}")
-            
-            # Create a comprehensive prompt for Gemini AI
-            prompt = f"""EMERGENCY ASSISTANCE REQUEST - IMMEDIATE RESPONSE NEEDED
-
-Location: {lat}, {lng} (Latitude, Longitude)
-
-Find the CLOSEST emergency services to these coordinates within 5km radius.
+    try:
+        print(f"🤖 Using Groq AI for emergency suggestions at {lat}, {lng}")
+        
+        prompt = f"""You are an emergency response AI. Find the CLOSEST emergency services to these coordinates: {lat}, {lng}
 
 Provide information for:
-1. HOSPITALS (top 3 closest)
-2. POLICE STATIONS (top 2 closest)  
-3. GAS STATIONS/MECHANICS (top 2 closest)
-4. SAFE PLACES/HOTELS (top 2 closest)
-5. EMERGENCY SAFETY TIPS (3 tips)
+1. HOSPITALS (top 3 closest within 5km)
+2. POLICE STATIONS (top 2 closest within 5km)  
+3. GAS STATIONS/MECHANICS (top 2 closest within 5km)
+4. SAFE PLACES/HOTELS (top 2 closest within 5km)
+5. EMERGENCY SAFETY TIPS (3 actionable tips)
 
-CRITICAL: Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
+Respond ONLY with valid JSON (no markdown, no explanation):
 
 {{
     "hospitals": [
@@ -657,131 +580,60 @@ CRITICAL: Respond ONLY with valid JSON in this exact format (no markdown, no ext
     "emergency_tips": ["Tip 1", "Tip 2", "Tip 3"]
 }}"""
 
-            # Generate response with timeout and retry
-            max_retries = 2
-            for attempt in range(max_retries):
-                try:
-                    print(f"🔄 Attempt {attempt + 1}/{max_retries} with {attempt_model_name}")
-                    response = attempt_model.generate_content(prompt,
-                        generation_config={
-                            'temperature': 0.1,  # Lower temperature for more consistent JSON
-                            'top_p': 0.8,
-                            'top_k': 40,
-                            'max_output_tokens': 4096,  # Increased to allow full JSON response
-                        })
-                    
-                    response_text = response.text.strip()
-                    print(f"📝 {attempt_model_name} Response Length: {len(response_text)} chars")
-                    print(f"📝 First 200 chars: {response_text[:200]}")
-                    
-                    # Clean up markdown formatting
-                    cleaned_text = response_text
-                    
-                    # Remove markdown code blocks
-                    if "```json" in cleaned_text:
-                        cleaned_text = cleaned_text.split("```json")[1].split("```")[0].strip()
-                    elif "```" in cleaned_text:
-                        # Try to extract content between any code blocks
-                        parts = cleaned_text.split("```")
-                        if len(parts) >= 3:
-                            cleaned_text = parts[1].strip()
-                    
-                    # Remove any leading/trailing whitespace
-                    cleaned_text = cleaned_text.strip()
-                    
-                    # Try to find JSON object boundaries
-                    if not cleaned_text.startswith('{'):
-                        # Try to find the first {
-                        start_idx = cleaned_text.find('{')
-                        if start_idx != -1:
-                            cleaned_text = cleaned_text[start_idx:]
-                    
-                    if not cleaned_text.endswith('}'):
-                        # Try to find the last }
-                        end_idx = cleaned_text.rfind('}')
-                        if end_idx != -1:
-                            cleaned_text = cleaned_text[:end_idx + 1]
-                    
-                    print(f"🧹 Cleaned text length: {len(cleaned_text)} chars")
-                    print(f"🧹 Cleaned first 200 chars: {cleaned_text[:200]}")
-                    
-                    # Parse JSON
-                    suggestions = json.loads(cleaned_text)
-                    
-                    # Validate structure
-                    required_keys = ['hospitals', 'police_stations', 'mechanics', 'hotels_restrooms', 'emergency_tips']
-                    missing_keys = [key for key in required_keys if key not in suggestions]
-                    
-                    if missing_keys:
-                        print(f"⚠️ Missing keys in response: {missing_keys}")
-                        # Add empty arrays for missing keys
-                        for key in missing_keys:
-                            suggestions[key] = []
-                    
-                    # Verify we have at least some data
-                    total_results = (len(suggestions.get('hospitals', [])) + 
-                                   len(suggestions.get('police_stations', [])) + 
-                                   len(suggestions.get('mechanics', [])) + 
-                                   len(suggestions.get('hotels_restrooms', [])))
-                    
-                    if total_results == 0:
-                        print(f"⚠️ {attempt_model_name} returned valid JSON but no emergency services")
-                        if attempt < max_retries - 1:
-                            print(f"🔄 Retrying with {attempt_model_name}... ({attempt + 2}/{max_retries})")
-                            continue
-                        else:
-                            print(f"❌ {attempt_model_name} exhausted, trying next model")
-                            break  # Try next model
-                    
-                    print(f"✅ Gemini AI Success with {attempt_model_name}!")
-                    print(f"   📊 Hospitals: {len(suggestions.get('hospitals', []))}")
-                    print(f"   📊 Police: {len(suggestions.get('police_stations', []))}")
-                    print(f"   📊 Mechanics: {len(suggestions.get('mechanics', []))}")
-                    print(f"   📊 Safe Places: {len(suggestions.get('hotels_restrooms', []))}")
-                    
-                    return suggestions
-                    
-                except json.JSONDecodeError as e:
-                    print(f"❌ JSON Parse Error with {attempt_model_name} (attempt {attempt + 1}): {e}")
-                    print(f"   Error at position {e.pos}")
-                    print(f"   Problematic text around error:")
-                    if hasattr(e, 'pos') and e.pos:
-                        start = max(0, e.pos - 50)
-                        end = min(len(cleaned_text), e.pos + 50)
-                        print(f"   ...{cleaned_text[start:end]}...")
-                    
-                    if attempt < max_retries - 1:
-                        print(f"🔄 Retrying with {attempt_model_name}... ({attempt + 2}/{max_retries})")
-                        continue
-                    else:
-                        print(f"❌ {attempt_model_name} JSON parsing failed, trying next model")
-                        break  # Try next model
-                        
-                except Exception as e:
-                    error_msg = str(e)
-                    if "quota" in error_msg.lower() or "limit" in error_msg.lower():
-                        print(f"❌ {attempt_model_name} quota exceeded: {e}")
-                        break  # Try next model immediately
-                    else:
-                        print(f"❌ {attempt_model_name} Generation Error (attempt {attempt + 1}): {e}")
-                        if attempt < max_retries - 1:
-                            print(f"🔄 Retrying with {attempt_model_name}... ({attempt + 2}/{max_retries})")
-                            continue
-                        else:
-                            print(f"❌ {attempt_model_name} failed, trying next model")
-                            break  # Try next model
-            
-        except Exception as e:
-            error_msg = str(e)
-            if "quota" in error_msg.lower() or "limit" in error_msg.lower():
-                print(f"❌ {attempt_model_name} quota exceeded during initialization: {e}")
-            else:
-                print(f"❌ {attempt_model_name} initialization error: {e}")
-            continue  # Try next model
-    
-    # If all Gemini models failed, use fallback
-    print("❌ All Gemini models failed or quota exceeded, using Google Places API fallback")
-    return get_fallback_emergency_suggestions(lat, lng)
+        # Call Groq API
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an emergency response assistant. Always respond with valid JSON only."
+                },
+                {
+                    "role": "user", 
+                    "content": prompt
+                }
+            ],
+            model="llama-3.1-8b-instant",  # Fast and current model
+            temperature=0.1,
+            max_tokens=4096,
+            response_format={"type": "json_object"}  # Forces JSON response
+        )
+        
+        response_text = chat_completion.choices[0].message.content.strip()
+        print(f"📝 Groq Response Length: {len(response_text)} chars")
+        print(f"📝 First 200 chars: {response_text[:200]}")
+        
+        # Parse JSON
+        suggestions = json.loads(response_text)
+        
+        # Validate structure
+        required_keys = ['hospitals', 'police_stations', 'mechanics', 'hotels_restrooms', 'emergency_tips']
+        for key in required_keys:
+            if key not in suggestions:
+                suggestions[key] = []
+        
+        total_results = sum(len(suggestions.get(key, [])) for key in required_keys[:4])
+        
+        if total_results == 0:
+            print("⚠️ Groq returned no results, using fallback")
+            return get_fallback_emergency_suggestions(lat, lng)
+        
+        print(f"✅ Groq AI Success!")
+        print(f"   📊 Hospitals: {len(suggestions.get('hospitals', []))}")
+        print(f"   📊 Police: {len(suggestions.get('police_stations', []))}")
+        print(f"   📊 Mechanics: {len(suggestions.get('mechanics', []))}")
+        print(f"   📊 Safe Places: {len(suggestions.get('hotels_restrooms', []))}")
+        
+        return suggestions
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON Parse Error: {e}")
+        print(f"Raw response: {response_text[:500] if 'response_text' in locals() else 'N/A'}")
+        return get_fallback_emergency_suggestions(lat, lng)
+    except Exception as e:
+        print(f"❌ Groq API Error: {e}")
+        traceback.print_exc()
+        return get_fallback_emergency_suggestions(lat, lng)
+
 
 
 def get_fallback_emergency_suggestions(lat, lng):
@@ -937,10 +789,32 @@ def send_alert():
         print(f"   Database: ✅ Saved")
         print(f"   Broadcasting to: 'admin' room")
         
-        # 🤖 GET AI EMERGENCY SUGGESTIONS
-        print(f"🤖 Requesting AI emergency assistance...")
-        emergency_suggestions = get_emergency_suggestions_with_ai(lat, lng)
-        print(f"✅ AI suggestions generated")
+        # 🚀 PRIORITY: Use Google Places API (New) for REAL emergency services data
+        # 1. Google Places API (New) - Real locations, addresses, phone numbers (PRIMARY)
+        # 2. Groq AI - AI-generated suggestions (BACKUP)
+        # 3. Generic fallback - Last resort
+        
+        print(f"🌐 Using Google Places API (New) for real emergency services...")
+        emergency_suggestions = get_nearby_places_with_google_api(lat, lng)
+        
+        # Check if Google Places provided good results
+        if emergency_suggestions and any(len(emergency_suggestions.get(key, [])) > 0 for key in ['hospitals', 'police_stations', 'mechanics', 'hotels_restrooms']):
+            print(f"✅ Google Places API provided real emergency services")
+            print(f"   📊 Hospitals: {len(emergency_suggestions.get('hospitals', []))}")
+            print(f"   📊 Police: {len(emergency_suggestions.get('police_stations', []))}")
+            print(f"   📊 Mechanics: {len(emergency_suggestions.get('mechanics', []))}")
+            print(f"   📊 Safe Places: {len(emergency_suggestions.get('hotels_restrooms', []))}")
+        else:
+            # If Google Places fails, try Groq AI as backup
+            print(f"⚠️ Google Places API failed or returned no data, trying Groq AI backup...")
+            emergency_suggestions = get_emergency_suggestions_with_groq(lat, lng)
+            
+            # If both fail, use generic fallback
+            if not emergency_suggestions or not any(len(emergency_suggestions.get(key, [])) > 0 for key in ['hospitals', 'police_stations', 'mechanics', 'hotels_restrooms']):
+                print(f"⚠️ Both Google Places and Groq AI failed, using generic fallback...")
+                emergency_suggestions = get_fallback_emergency_suggestions(lat, lng)
+        
+        print(f"✅ Emergency suggestions generated")
        
         # Emit to all connected admin clients with proper timestamp
         socketio.emit('new_sos_alert', {
@@ -1316,114 +1190,39 @@ def clear_all_data():
         print(traceback.format_exc())
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
-@app.route("/gemini-status", methods=["GET"])
-def gemini_status():
-    """Check current Gemini AI configuration status"""
+@app.route("/ai-status", methods=["GET"])
+def ai_status():
+    """Check current AI configuration status (Groq + Google Places)"""
     try:
         status_info = {
-            "gemini_available": GEMINI_AVAILABLE,
-            "api_key_configured": bool(GEMINI_API_KEY),
-            "api_key_preview": f"{GEMINI_API_KEY[:10]}...{GEMINI_API_KEY[-4:]}" if GEMINI_API_KEY else None,
-            "model_configured": model is not None,
-            "model_name": model_name,
-            "available_models": []
+            "groq_available": GROQ_AVAILABLE,
+            "groq_configured": groq_client is not None,
+            "groq_api_key_preview": f"{GROQ_API_KEY[:10]}...{GROQ_API_KEY[-4:]}" if GROQ_API_KEY else None,
+            "google_places_available": bool(API_KEY),
+            "primary_ai": "Google Places API (New)" if API_KEY else "Groq" if groq_client else "Generic Fallback"
         }
         
-        # Try to list available models
-        if GEMINI_AVAILABLE and GEMINI_API_KEY:
+        # Test Groq if available
+        if GROQ_AVAILABLE and groq_client:
             try:
-                genai.configure(api_key=GEMINI_API_KEY)
-                models = list(genai.list_models())
-                status_info["available_models"] = [m.name for m in models[:10]]  # First 10 models
-                status_info["total_models"] = len(models)
+                test_response = groq_client.chat.completions.create(
+                    messages=[{"role": "user", "content": "Test"}],
+                    model="llama-3.1-8b-instant",
+                    max_tokens=5
+                )
+                status_info["groq_test_success"] = True
+                status_info["groq_test_response"] = test_response.choices[0].message.content
             except Exception as e:
-                status_info["model_list_error"] = str(e)
+                status_info["groq_test_success"] = False
+                status_info["groq_test_error"] = str(e)
         
         return jsonify(status_info), 200
         
     except Exception as e:
         return jsonify({
             "error": str(e),
-            "gemini_available": GEMINI_AVAILABLE,
-            "api_key_configured": bool(GEMINI_API_KEY)
-        }), 500
-
-@app.route("/test-gemini-simple", methods=["GET"])
-def test_gemini_simple():
-    try:
-        if not GEMINI_AVAILABLE or not model:
-            return jsonify({
-                "status": "error",
-                "message": "Gemini not configured",
-                "available": GEMINI_AVAILABLE,
-                "model": str(model) if model else None
-            })
-                
-        # Simple test
-        response = model.generate_content("Say 'Hello, I am working!' in JSON format: {\"message\": \"your response\"}")
-        return jsonify({
-            "status": "success",
-            "response": response.text,
-            "model": str(model)
-        })
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        })
-
-@app.route("/test-gemini", methods=["POST", "OPTIONS"])
-def test_gemini():
-    """Test endpoint for Gemini AI functionality"""
-    # Handle CORS preflight
-    if request.method == "OPTIONS":
-        return jsonify({"status": "ok"}), 200
-        
-    try:
-        data = request.json
-        lat = data.get("lat")
-        lng = data.get("lng")
-        
-        # Require actual coordinates - no hardcoded fallbacks
-        if not lat or not lng:
-            return jsonify({
-                "status": "error",
-                "message": "Latitude and longitude are required",
-                "gemini_available": GEMINI_AVAILABLE,
-                "model_configured": model is not None
-            }), 400
-        
-        print(f"🧪 Testing Gemini AI with coordinates: {lat}, {lng}")
-        
-        # List available models for debugging
-        if GEMINI_AVAILABLE and GEMINI_API_KEY:
-            try:
-                genai.configure(api_key=GEMINI_API_KEY)
-                models = genai.list_models()
-                print("📋 Available Gemini models:")
-                for m in models:
-                    print(f"   - {m.name}")
-            except Exception as e:
-                print(f"⚠️ Could not list models: {e}")
-        
-        suggestions = get_emergency_suggestions_with_ai(lat, lng)
-        
-        return jsonify({
-            "status": "success",
-            "message": "Gemini AI test completed",
-            "gemini_available": GEMINI_AVAILABLE,
-            "model_configured": model is not None,
-            "suggestions": suggestions
-        }), 200
-        
-    except Exception as e:
-        print(f"❌ Gemini Test Error: {e}")
-        traceback.print_exc()
-        return jsonify({
-            "status": "error",
-            "message": str(e),
-            "gemini_available": GEMINI_AVAILABLE,
-            "model_configured": model is not None
+            "groq_available": GROQ_AVAILABLE,
+            "groq_configured": groq_client is not None
         }), 500
 
 @app.route("/health", methods=["GET"])
@@ -1462,7 +1261,7 @@ def handle_disconnect():
 if __name__ == "__main__":
     print("🛡️ SafeRoute Backend Starting...")
     print("🚨 SOS Alert System: Active")
-    print("🤖 AI Emergency Assistant: Active")
-    print("🌐 Google Places API (New): Active")
+    print("🌐 Google Places API (New): Primary Emergency Service Provider")
+    print("🤖 Groq AI: Backup Emergency Assistant")
     print("🌐 API Running on: http://localhost:5000")
     socketio.run(app, host="0.0.0.0", port=5000, debug=True)

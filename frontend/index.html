@@ -37,7 +37,8 @@
             <button onclick="openModal('helpline-modal')" class="nav-btn outline-btn"><i class="fa-solid fa-phone"></i> Help</button>
             <button onclick="openModal('community-modal')" class="nav-btn community-btn"><i class="fa-solid fa-comments"></i> Community</button>
             <button onclick="openModal('sos-modal')" class="nav-btn sos-btn"><i class="fa-solid fa-tower-broadcast"></i> SOS</button>
-            <button onclick="testGeminiAI()" class="nav-btn" style="background: #8b5cf6; color: white;" title="Test Backend Connection"><i class="fa-solid fa-robot"></i> Test</button>
+            <button onclick="testAIStatus()" class="nav-btn" style="background: #8b5cf6; color: white;" title="Test AI Systems"><i class="fa-solid fa-robot"></i> AI Status</button>
+            <button onclick="testBackendSOS()" class="nav-btn" style="background: #f59e0b; color: white;" title="Test SOS Backend"><i class="fa-solid fa-vial"></i> Test SOS</button>
             <button onclick="testEmergencyModal()" class="nav-btn" style="background: #dc3545; color: white;" title="Test Emergency Modal"><i class="fa-solid fa-ambulance"></i> Demo</button>
             <button onclick="clearAllData()" class="nav-btn clear-btn" title="Clear Data"><i class="fa-solid fa-trash"></i></button>
             <button onclick="toggleNightMode()" class="nav-btn icon-only" title="Theme"><i class="fa-solid fa-moon"></i></button>
@@ -172,7 +173,7 @@
     </div>
 
     <!-- Emergency Suggestions Modal -->
-    <div id="emergency-suggestions-modal" class="modal-overlay" onclick="closeEmergencySuggestionsModal()">
+    <div id="emergency-suggestions-modal" class="modal-overlay">
         <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 600px; max-height: 90vh;">
             <div class="modal-header" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: white;">
                 <h2><i class="fa-solid fa-robot"></i> AI Emergency Assistance</h2>

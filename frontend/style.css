@@ -349,10 +349,12 @@ body.night-mode .emergency-item:hover {
 }
 
 /* Modal overlay click prevention */
-#emergency-suggestions-modal .modal-content {
-    pointer-events: all;
-}
-
 #emergency-suggestions-modal {
     pointer-events: all;
+    z-index: 99999 !important;
+}
+
+#emergency-suggestions-modal.active {
+    display: flex !important;
+    z-index: 99999 !important;
 }
