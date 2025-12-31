@@ -50,12 +50,18 @@ function initializeSocketIO() {
     updateFeedbackListUI();
     addFeedbackMarker(data);
   });
-  socket.on("data_cleared", () => {
+  socket.on("data_cleared", (data) => {
+    console.log('🗑️ Data cleared event received:', data);
     allFeedbacks = [];
     clearFeedback();
     clearCrimeVisualization();
     updateFeedbackListUI();
-    alert("System data cleared remotely.");
+    
+    if (data && data.sos_deleted !== undefined && data.feedback_deleted !== undefined) {
+      alert(`🗑️ System Data Cleared Remotely\\n\\n• ${data.sos_deleted} SOS alerts deleted\\n• ${data.feedback_deleted} feedback items deleted`);
+    } else {
+      alert("🗑️ System data cleared remotely.");
+    }
   });
 }
 
@@ -933,14 +939,41 @@ window.fetchFeedbackForRoute = function () {
     .catch((e) => console.log(e));
 };
 
-window.clearAllData = function () {
-  if (confirm("Clear All Data?")) {
-    fetch("http://localhost:5000/clear-all-data", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: "DELETE_ALL_DATA" })
-    });
-  }
+window.clearAllData = async function () {
+    const confirmed = confirm("🗑️ Clear All Data?\\n\\nThis will permanently delete:\\n• All SOS alerts\\n• All community feedback\\n• All route data\\n\\nThis action cannot be undone!");
+    
+    if (confirmed) {
+        try {
+            console.log('🗑️ Clearing all data...');
+            
+            const response = await fetch("http://localhost:5000/clear-all-data", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ confirmation: "DELETE_ALL_DATA" })  // ✅ FIX: Use 'confirmation'
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                console.log('✅ Data cleared successfully:', result);
+                
+                alert(`✅ Data Cleared Successfully!\\n\\n• ${result.sos_deleted} SOS alerts deleted\\n• ${result.feedback_deleted} feedback items deleted\\n\\nAll data has been permanently removed.`);
+                
+                // Refresh the page to clear any cached data
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
+                
+            } else {
+                const error = await response.json();
+                console.error('❌ Clear data failed:', error);
+                alert(`❌ Failed to clear data: ${error.error || 'Unknown error'}`);
+            }
+            
+        } catch (error) {
+            console.error('❌ Clear data error:', error);
+            alert(`❌ Error clearing data: ${error.message}\\n\\nPlease check if the backend server is running.`);
+        }
+    }
 };
 
 window.toggleNightMode = function () {

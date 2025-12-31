@@ -1166,12 +1166,13 @@ def clear_all_data():
         # Emit socket event in background (don't block response)
         def emit_clear_event():
             try:
+                # ✅ FIX: Remove broadcast parameter, emit to all connected clients
                 socketio.emit('data_cleared', {
                     'sos_deleted': sos_count,
                     'feedback_deleted': feedback_count,
                     'timestamp': datetime.now().isoformat()
-                }, broadcast=True)
-                print("📡 Socket event emitted")
+                })
+                print("📡 Socket event emitted to all clients")
             except Exception as socket_err:
                 print(f"⚠️ Socket emit warning: {socket_err}")
         
@@ -1181,11 +1182,13 @@ def clear_all_data():
         except:
             # If eventlet spawn fails, try direct emit
             try:
+                # ✅ FIX: Remove broadcast parameter
                 socketio.emit('data_cleared', {
                     'sos_deleted': sos_count,
                     'feedback_deleted': feedback_count,
                     'timestamp': datetime.now().isoformat()
-                }, broadcast=True)
+                })
+                print("📡 Direct socket event emitted")
             except Exception as e:
                 print(f"⚠️ Could not emit socket event: {e}")
         
