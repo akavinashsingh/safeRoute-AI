@@ -17,13 +17,15 @@ const crimeConfig = {
 };
 
 const feedbackConfig = {
-    accident: { icon: "🚨", color: "#F44336", label: "Accident" },
-    construction: { icon: "🚧", color: "#FFC107", label: "Construction" },
-    pothole: { icon: "🕳️", color: "#FF9800", label: "Pothole" },
-    flood: { icon: "🌊", color: "#2196F3", label: "Flood" },
-    traffic: { icon: "🚦", color: "#9C27B0", label: "Traffic" },
-    danger: { icon: "⚠️", color: "#FF0000", label: "Danger" },
-    other: { icon: "❓", color: "#757575", label: "Other" }
+    accident: { icon: "fa-solid fa-car-crash", color: "#F44336", label: "Accident" },
+    construction: { icon: "fa-solid fa-road-barrier", color: "#FFC107", label: "Construction" },
+    pothole: { icon: "fa-solid fa-road", color: "#FF9800", label: "Pothole" },
+    flood: { icon: "fa-solid fa-water", color: "#2196F3", label: "Flood" },
+    traffic: { icon: "fa-solid fa-traffic-light", color: "#9C27B0", label: "Traffic" },
+    danger: { icon: "fa-solid fa-triangle-exclamation", color: "#FF0000", label: "Danger" },
+    harassment: { icon: "fa-solid fa-ban", color: "#E91E63", label: "Harassment" },
+    theft: { icon: "fa-solid fa-mask", color: "#795548", label: "Theft" },
+    other: { icon: "fa-solid fa-question", color: "#757575", label: "Other" }
 };
 
 /* --- 1. Map Initialization --- */
@@ -44,8 +46,18 @@ window.initMap = function () {
 };
 
 function initializeSocketIO() {
-  socket.on("connect", () => console.log("🔌 Connected to Server"));
+  socket.on("connect", () => {
+    console.log("🔌 Connected to Server");
+    console.log("🆔 Socket ID:", socket.id);
+  });
+  socket.on("disconnect", () => {
+    console.log("🔌 Disconnected from Server");
+  });
+  socket.on("connect_error", (error) => {
+    console.error("❌ Socket connection error:", error);
+  });
   socket.on("new_feedback", (data) => {
+    console.log("💬 New feedback received:", data);
     allFeedbacks.unshift(data);
     updateFeedbackListUI();
     addFeedbackMarker(data);
@@ -56,6 +68,17 @@ function initializeSocketIO() {
     clearFeedback();
     clearCrimeVisualization();
     updateFeedbackListUI();
+    
+    // Clear displayed routes
+    rendererArray.forEach((r) => r.setMap(null));
+    rendererArray = [];
+    currentRoutes = [];
+    
+    // Clear route cards
+    const container = document.getElementById("routes-list");
+    if (container) container.innerHTML = "";
+    
+    console.log('✅ Local data cleared successfully');
     
     if (data && data.sos_deleted !== undefined && data.feedback_deleted !== undefined) {
       alert(`🗑️ System Data Cleared Remotely\\n\\n• ${data.sos_deleted} SOS alerts deleted\\n• ${data.feedback_deleted} feedback items deleted`);
@@ -802,11 +825,11 @@ function updateFeedbackListUI() {
         return `
             <div class="feedback-item" onclick="focusOnFeedback(${fb.lat}, ${fb.lng})">
                 <div style="display: flex; gap: 12px; padding: 12px;">
-                    <span style="font-size: 24px;">${config.icon}</span>
+                    <span style="font-size: 18px; color: ${config.color};"><i class="${config.icon}"></i></span>
                     <div>
                         <div style="font-weight: 600; color: ${config.color};">${config.label}</div>
                         <div style="font-size: 13px; color: #666;">${fb.description || 'Issue reported'}</div>
-                        <div style="font-size: 11px; color: #999;">📍 ${fb.lat.toFixed(4)}, ${fb.lng.toFixed(4)}</div>
+                        <div style="font-size: 11px; color: #999;"><i class="fa-solid fa-location-dot"></i> ${fb.lat.toFixed(4)}, ${fb.lng.toFixed(4)}</div>
                     </div>
                 </div>
             </div>
@@ -876,9 +899,9 @@ function addFeedbackMarker(fb) {
     const infoWindow = new google.maps.InfoWindow({
         content: `
             <div style="padding: 10px;">
-                <h4>${config.icon} ${config.label}</h4>
+                <h4><i class="${config.icon}" style="color: ${config.color};"></i> ${config.label}</h4>
                 <p>${fb.description || 'No description'}</p>
-                <small>📍 ${fb.lat.toFixed(6)}, ${fb.lng.toFixed(6)}</small>
+                <small><i class="fa-solid fa-location-dot"></i> ${fb.lat.toFixed(6)}, ${fb.lng.toFixed(6)}</small>
             </div>
         `
     });
@@ -945,6 +968,7 @@ window.clearAllData = async function () {
     if (confirmed) {
         try {
             console.log('🗑️ Clearing all data...');
+            console.log('📡 Sending POST to /clear-all-data endpoint');
             
             const response = await fetch("http://localhost:5000/clear-all-data", {
                 method: "POST",
@@ -952,16 +976,31 @@ window.clearAllData = async function () {
                 body: JSON.stringify({ confirmation: "DELETE_ALL_DATA" })  // ✅ FIX: Use 'confirmation'
             });
             
+            console.log('📨 Response status:', response.status);
+            console.log('📨 Response ok:', response.ok);
+            
             if (response.ok) {
                 const result = await response.json();
                 console.log('✅ Data cleared successfully:', result);
                 
+                // Clear local data immediately (don't wait for socket event)
+                allFeedbacks = [];
+                clearFeedback();
+                clearCrimeVisualization();
+                updateFeedbackListUI();
+                
+                // Clear displayed routes
+                rendererArray.forEach((r) => r.setMap(null));
+                rendererArray = [];
+                currentRoutes = [];
+                
+                // Clear route cards
+                const container = document.getElementById("routes-list");
+                if (container) container.innerHTML = "";
+                
                 alert(`✅ Data Cleared Successfully!\\n\\n• ${result.sos_deleted} SOS alerts deleted\\n• ${result.feedback_deleted} feedback items deleted\\n\\nAll data has been permanently removed.`);
                 
-                // Refresh the page to clear any cached data
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1000);
+                console.log('✅ Local UI cleared successfully');
                 
             } else {
                 const error = await response.json();

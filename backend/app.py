@@ -1101,7 +1101,7 @@ def clear_all_data():
             print("⚠️ No JSON data received")
             return jsonify({"error": "No data received"}), 400
         
-        confirmation = data.get('confirm')
+        confirmation = data.get('confirmation')  # ✅ FIX: Use 'confirmation' to match frontend
         print(f"🔐 Confirmation received: {confirmation}")
         
         if confirmation != 'DELETE_ALL_DATA':
@@ -1166,12 +1166,13 @@ def clear_all_data():
         # Emit socket event in background (don't block response)
         def emit_clear_event():
             try:
-                # ✅ FIX: Remove broadcast parameter, emit to all connected clients
-                socketio.emit('data_cleared', {
-                    'sos_deleted': sos_count,
-                    'feedback_deleted': feedback_count,
-                    'timestamp': datetime.now().isoformat()
-                })
+                # ✅ FIX: Add Flask app context and explicit namespace
+                with app.app_context():
+                    socketio.emit('data_cleared', {
+                        'sos_deleted': sos_count,
+                        'feedback_deleted': feedback_count,
+                        'timestamp': datetime.now().isoformat()
+                    }, namespace='/')
                 print("📡 Socket event emitted to all clients")
             except Exception as socket_err:
                 print(f"⚠️ Socket emit warning: {socket_err}")
@@ -1182,12 +1183,13 @@ def clear_all_data():
         except:
             # If eventlet spawn fails, try direct emit
             try:
-                # ✅ FIX: Remove broadcast parameter
-                socketio.emit('data_cleared', {
-                    'sos_deleted': sos_count,
-                    'feedback_deleted': feedback_count,
-                    'timestamp': datetime.now().isoformat()
-                })
+                # ✅ FIX: Add Flask app context and explicit namespace
+                with app.app_context():
+                    socketio.emit('data_cleared', {
+                        'sos_deleted': sos_count,
+                        'feedback_deleted': feedback_count,
+                        'timestamp': datetime.now().isoformat()
+                    }, namespace='/')
                 print("📡 Direct socket event emitted")
             except Exception as e:
                 print(f"⚠️ Could not emit socket event: {e}")

@@ -82,8 +82,8 @@
         </div>
 
         <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('sos')">🚨 SOS Alerts</button>
-            <button class="tab-btn" onclick="switchTab('feedback')">💬 Community Reports</button>
+            <button class="tab-btn active" onclick="switchTab('sos')"><i class="fa-solid fa-triangle-exclamation"></i> SOS Alerts</button>
+            <button class="tab-btn" onclick="switchTab('feedback')"><i class="fa-solid fa-comments"></i> Community Reports</button>
         </div>
 
         <div id="sos-tab" class="tab-content active">
@@ -109,10 +109,33 @@
     <script>
         const socket = io('http://localhost:5000');
         
-        socket.on('connect', () => { socket.emit('join_admin'); });
-        socket.on('new_sos_alert', () => { loadAlerts(); });
-        socket.on('new_community_feedback', () => { loadFeedback(); });
-        socket.on('data_cleared', () => { loadAlerts(); loadFeedback(); alert("Data Wiped."); });
+        socket.on('connect', () => { 
+            console.log('🔌 Admin: Connected to Server');
+            console.log('🆔 Admin Socket ID:', socket.id);
+            socket.emit('join_admin'); 
+        });
+        socket.on('disconnect', () => { 
+            console.log('🔌 Admin: Disconnected from Server'); 
+        });
+        socket.on('connect_error', (error) => { 
+            console.error('❌ Admin: Socket connection error:', error); 
+        });
+        socket.on('new_sos_alert', () => { 
+            console.log('🚨 Admin: New SOS alert received');
+            loadAlerts(); 
+        });
+        socket.on('new_community_feedback', () => { 
+            console.log('💬 Admin: New feedback received');
+            loadFeedback(); 
+        });
+        socket.on('data_cleared', (data) => { 
+            console.log('🗑️ Admin: Data cleared event received:', data);
+            loadAlerts(); 
+            loadFeedback(); 
+            if (data && data.sos_deleted !== undefined && data.feedback_deleted !== undefined) {
+                console.log(`📊 Admin: Socket event - ${data.sos_deleted} SOS, ${data.feedback_deleted} feedback deleted`);
+            }
+        });
 
         function switchTab(tab) {
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -198,10 +221,44 @@
         }
 
         async function clearAllData() {
-            if(confirm("Wipe ALL data? This cannot be undone.")) {
-                await fetch('http://localhost:5000/clear-all-data', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({confirmation: 'DELETE_ALL_DATA'})
-                });
+            const confirmed = confirm("🗑️ Wipe ALL Data?\\n\\nThis will permanently delete:\\n• All SOS alerts\\n• All community feedback\\n• All route data\\n\\nThis action cannot be undone!");
+            
+            if (confirmed) {
+                try {
+                    console.log('🗑️ Admin: Clearing all data...');
+                    console.log('📡 Sending POST to /clear-all-data endpoint');
+                    
+                    const response = await fetch('http://localhost:5000/clear-all-data', {
+                        method: 'POST', 
+                        headers: {'Content-Type': 'application/json'}, 
+                        body: JSON.stringify({confirmation: 'DELETE_ALL_DATA'})
+                    });
+                    
+                    console.log('📨 Response status:', response.status);
+                    console.log('📨 Response ok:', response.ok);
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        console.log('✅ Admin: Data cleared successfully:', result);
+                        
+                        // Immediately refresh the admin panels (don't wait for socket)
+                        loadAlerts();
+                        loadFeedback();
+                        
+                        alert(`✅ Data Cleared Successfully!\\n\\n• ${result.sos_deleted} SOS alerts deleted\\n• ${result.feedback_deleted} feedback items deleted\\n\\nAll data has been permanently removed.`);
+                        
+                        console.log('✅ Admin UI refreshed');
+                        
+                    } else {
+                        const error = await response.json();
+                        console.error('❌ Admin: Clear data failed:', error);
+                        alert(`❌ Failed to clear data: ${error.error || 'Unknown error'}`);
+                    }
+                    
+                } catch (error) {
+                    console.error('❌ Admin: Clear data error:', error);
+                    alert(`❌ Error clearing data: ${error.message}\\n\\nPlease check if the backend server is running.`);
+                }
             }
         }
         
