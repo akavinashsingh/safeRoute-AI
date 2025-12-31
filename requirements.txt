@@ -1,0 +1,37 @@
+# SafeRoute AI - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core Web Framework
+flask==2.3.3
+
+# Cross-Origin Resource Sharing
+flask-cors==4.0.0
+
+# Real-time WebSocket Communication  
+flask-socketio==5.3.6
+
+# Async Server Support
+eventlet==0.33.3
+
+# HTTP Requests for APIs
+requests==2.31.0
+
+# Google Maps Route Encoding/Decoding
+polyline==2.0.0
+
+# Groq AI Integration
+groq==0.4.1
+
+# Additional Dependencies (automatically installed)
+# - Werkzeug (Flask dependency)
+# - Jinja2 (Flask dependency) 
+# - itsdangerous (Flask dependency)
+# - click (Flask dependency)
+# - MarkupSafe (Jinja2 dependency)
+# - python-socketio (flask-socketio dependency)
+# - python-engineio (python-socketio dependency)
+# - greenlet (eventlet dependency)
+# - urllib3 (requests dependency)
+# - charset-normalizer (requests dependency)
+# - idna (requests dependency)
+# - certifi (requests dependency)

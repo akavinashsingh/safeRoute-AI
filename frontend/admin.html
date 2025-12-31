@@ -200,7 +200,7 @@
         async function clearAllData() {
             if(confirm("Wipe ALL data? This cannot be undone.")) {
                 await fetch('http://localhost:5000/clear-all-data', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({confirm: 'DELETE_ALL_DATA'})
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({confirmation: 'DELETE_ALL_DATA'})
                 });
             }
         }
