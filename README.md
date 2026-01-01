@@ -2,6 +2,21 @@
 
 > **Hackathon Project**: Empowering safer journeys through AI-driven route analysis and real-time community alerts.
 
+## 🚀 Live Demo
+
+**Try SafeRoute now - No installation required!**
+
+| 🌐 **User App** | 👨‍💼 **Admin Dashboard** |
+|:---:|:---:|
+| [![Launch App](https://img.shields.io/badge/🚀_Launch_SafeRoute-4CAF50?style=for-the-badge&logo=googlemaps&logoColor=white)](https://saferoute-frontend.onrender.com/) | [![Admin Panel](https://img.shields.io/badge/👨‍💼_Admin_Panel-FF5722?style=for-the-badge&logo=dashboard&logoColor=white)](https://saferoute-frontend.onrender.com/admin) |
+| Main navigation interface | Monitor SOS alerts & community reports |
+
+**🔗 Direct Links:**
+- **User Interface**: https://saferoute-frontend.onrender.com/
+- **Admin Dashboard**: https://saferoute-frontend.onrender.com/admin
+
+---
+
 SafeRoute is an intelligent navigation system that prioritizes user safety by analyzing crime data, emergency services availability, and community reports to recommend the safest routes. Built during a hackathon with a focus on women's safety and community-driven protection.
 
 ## 🌟 Features
