@@ -16,8 +16,8 @@ flask-cors==4.0.0
 # Real-time WebSocket Communication  
 flask-socketio==5.3.6
 
-# Async Server Support
-eventlet==0.33.3
+# Async Server Support - UPGRADED FOR PYTHON 3.13 COMPATIBILITY
+eventlet>=0.36.1
 
 # HTTP Requests for APIs
 requests==2.31.0
