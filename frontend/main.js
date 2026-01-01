@@ -237,6 +237,17 @@ window.selectRoute = function (index) {
   if (currentRoutes[index]) {
     showCrimeIncidents(currentRoutes[index].crime_incidents);
   }
+  
+  // Auto-close sidebar on mobile after route selection
+  if (window.innerWidth <= 768) {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.querySelector('.sidebar-overlay');
+    if (sidebar.classList.contains('active')) {
+      sidebar.classList.remove('active');
+      overlay.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+  }
 };
 
 function renderAllRoutes(selectedIndex) {
@@ -1054,6 +1065,21 @@ window.clearAllData = async function () {
 
 window.toggleNightMode = function () {
   document.body.classList.toggle("night-mode");
+};
+
+window.toggleMobileSidebar = function () {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.querySelector('.sidebar-overlay');
+  
+  sidebar.classList.toggle('active');
+  overlay.classList.toggle('active');
+  
+  // Prevent body scroll when sidebar is open
+  if (sidebar.classList.contains('active')) {
+    document.body.style.overflow = 'hidden';
+  } else {
+    document.body.style.overflow = '';
+  }
 };
 
 window.testBackendConnection = async function() {

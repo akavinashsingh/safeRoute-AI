@@ -18,6 +18,9 @@
 
     <nav class="navbar">
         <div class="brand-container">
+            <button class="mobile-menu-btn" onclick="toggleMobileSidebar()">
+                <i class="fa-solid fa-bars"></i>
+            </button>
             <div class="logo-text">SafeRoute</div>
             <div class="divider">|</div>
             <div class="slogan-container">
@@ -33,17 +36,27 @@
         </div>
 
         <div class="nav-actions">
-            <button onclick="openModal('tips-modal')" class="nav-btn outline-btn"><i class="fa-solid fa-shield-halved"></i> Tips</button>
-            <button onclick="openModal('helpline-modal')" class="nav-btn outline-btn"><i class="fa-solid fa-phone"></i> Help</button>
-            <button onclick="openModal('community-modal')" class="nav-btn community-btn"><i class="fa-solid fa-comments"></i> Community</button>
-            <button onclick="openModal('sos-modal')" class="nav-btn sos-btn"><i class="fa-solid fa-tower-broadcast"></i> SOS</button>
+            <button onclick="openModal('tips-modal')" class="nav-btn outline-btn"><i class="fa-solid fa-shield-halved"></i> <span>Tips</span></button>
+            <button onclick="openModal('helpline-modal')" class="nav-btn outline-btn"><i class="fa-solid fa-phone"></i> <span>Help</span></button>
+            <button onclick="openModal('community-modal')" class="nav-btn community-btn"><i class="fa-solid fa-comments"></i> <span>Community</span></button>
+            <button onclick="openModal('sos-modal')" class="nav-btn sos-btn"><i class="fa-solid fa-tower-broadcast"></i> <span>SOS</span></button>
             <button onclick="clearAllData()" class="nav-btn clear-btn" title="Clear Data"><i class="fa-solid fa-trash"></i></button>
             <button onclick="toggleNightMode()" class="nav-btn icon-only" title="Theme"><i class="fa-solid fa-moon"></i></button>
         </div>
     </nav>
 
     <div class="main-layout">
+        <div class="sidebar-overlay" onclick="toggleMobileSidebar()"></div>
         <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-brand">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span class="sidebar-logo-text">SafeRoute</span>
+                </div>
+                <button class="sidebar-close-btn" onclick="toggleMobileSidebar()">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
             <div class="search-container">
                 <h3><i class="fa-solid fa-map-location-dot"></i> Plan Journey</h3>
                 

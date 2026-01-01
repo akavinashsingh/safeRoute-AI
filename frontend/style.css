@@ -33,6 +33,48 @@ body {
 .map-wrapper { flex: 1; position: relative; height: 100%; width: 100%; }
 #map { width: 100%; height: 100%; }
 
+/* Sidebar header - hidden by default */
+.sidebar-header {
+    display: none;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border);
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-light);
+}
+
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-main);
+}
+
+.sidebar-brand i {
+    font-size: 1.2rem;
+    color: var(--accent);
+}
+
+.sidebar-logo-text {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--text-main);
+}
+
+.sidebar-close-btn {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: var(--text-main);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+.sidebar-close-btn:hover {
+    background: var(--white);
+}
+
 /* --- Navbar --- */
 .navbar {
     height: 65px; background: var(--white); border-bottom: 1px solid var(--border);
@@ -44,6 +86,22 @@ body {
 .slogan-container { height: 20px; overflow: hidden; }
 .slogan-wrapper { animation: slideText 12s infinite cubic-bezier(0.23, 1, 0.32, 1); }
 .slogan { height: 20px; display: flex; align-items: center; font-size: 0.9rem; font-weight: 500; color: var(--accent); }
+
+/* Mobile menu button - hidden by default */
+.mobile-menu-btn {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: var(--text-main);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 4px;
+}
+.mobile-menu-btn:hover {
+    background: var(--bg-light);
+}
+
 @keyframes slideText {
     0%, 15% { transform: translateY(0); }
     20%, 35% { transform: translateY(-20px); }
@@ -69,6 +127,8 @@ body {
 body.night-mode .outline-btn:hover { background: #334155; }
 body.night-mode .community-btn { background: #1e3a8a; color: #93c5fd; }
 body.night-mode .sos-btn { background: #7f1d1d; color: #fca5a5; border-color: #991b1b; }
+body.night-mode .sidebar-header { background: #0f172a; }
+body.night-mode .sidebar-close-btn:hover { background: #1e293b; }
 
 /* --- Sidebar Inputs --- */
 .search-container { padding: 25px; border-bottom: 1px solid var(--border); }
@@ -254,8 +314,99 @@ body.night-mode .emergency-item:hover {
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
-/* Responsive modal for mobile */
+/* Responsive Design for Mobile */
 @media (max-width: 768px) {
+    /* Navbar responsive fixes */
+    .navbar {
+        padding: 0 12px;
+        flex-wrap: nowrap;
+        min-height: 65px;
+        height: 65px;
+    }
+    
+    .brand-container {
+        gap: 8px;
+        flex: 1;
+        min-width: 0; /* Allow shrinking */
+    }
+    
+    /* Show mobile menu button */
+    .mobile-menu-btn {
+        display: block;
+    }
+    
+    .logo-text {
+        font-size: 1.1rem;
+        white-space: nowrap;
+    }
+    
+    .slogan-container {
+        display: none; /* Hide animated slogans on mobile */
+    }
+    
+    .divider {
+        display: none; /* Hide divider on mobile */
+    }
+    
+    .nav-actions {
+        gap: 4px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+    
+    .nav-btn {
+        padding: 6px 10px;
+        font-size: 0.8rem;
+        white-space: nowrap;
+    }
+    
+    .nav-btn span {
+        display: none; /* Hide button text, keep only icons */
+    }
+    
+    /* Sidebar responsive */
+    .sidebar {
+        width: 85%;
+        max-width: 350px;
+        position: fixed;
+        top: 0;
+        left: -100%;
+        height: 100vh;
+        transition: left 0.3s ease;
+        z-index: 1000;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+    }
+    
+    .sidebar.active {
+        left: 0;
+    }
+    
+    /* Show sidebar header on mobile */
+    .sidebar-header {
+        display: flex;
+    }
+    
+    .main-layout {
+        height: calc(100vh - 65px);
+    }
+    
+    /* Overlay for mobile sidebar */
+    .sidebar-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 999;
+    }
+    
+    .sidebar-overlay.active {
+        display: block;
+    }
+    
+    /* Modal responsive fixes */
     .modal-content {
         width: 95%;
         max-height: 90vh;
@@ -267,6 +418,49 @@ body.night-mode .emergency-item:hover {
     
     .emergency-item {
         padding: 10px;
+    }
+}
+
+/* Tablet responsive */
+@media (max-width: 1024px) and (min-width: 769px) {
+    .sidebar {
+        width: 320px;
+    }
+    
+    .navbar {
+        padding: 0 16px;
+    }
+    
+    .brand-container {
+        gap: 10px;
+    }
+    
+    .slogan {
+        font-size: 0.8rem;
+    }
+}
+
+/* Small mobile phones */
+@media (max-width: 480px) {
+    .navbar {
+        padding: 0 8px;
+    }
+    
+    .logo-text {
+        font-size: 1rem;
+    }
+    
+    .nav-actions {
+        gap: 2px;
+    }
+    
+    .nav-btn {
+        padding: 4px 6px;
+        font-size: 0.75rem;
+    }
+    
+    .sidebar {
+        width: 90%;
     }
 }
 
