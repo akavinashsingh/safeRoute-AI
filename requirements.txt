@@ -1,6 +1,9 @@
 # SafeRoute AI - Python Dependencies
 # Install with: pip install -r requirements.txt
 
+# Python 3.12+ Compatibility
+setuptools>=65.5.0
+
 # Environment Variables
 python-dotenv==1.0.0
 
