@@ -7,7 +7,7 @@ function getBackendUrl() {
     
     // For production, use the deployed backend URL
     // This will be updated automatically when deployed
-    return 'https://saferoute-backend.onrender.com';
+    return 'https://saferoute-backend-4b81.onrender.com/';
 }
 
 // Export the backend URL
