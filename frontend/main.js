@@ -20,7 +20,7 @@ async function loadGoogleMapsAPI() {
         
         // Load Google Maps API dynamically
         const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${config.google_maps_api_key}&libraries=places,visualization&callback=initMap`;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${config.google_maps_api_key}&libraries=places,visualization,geometry&callback=initMap`;
         script.async = true;
         script.defer = true;
         
@@ -41,6 +41,19 @@ async function loadGoogleMapsAPI() {
 
 // Load Google Maps API when page loads
 document.addEventListener('DOMContentLoaded', loadGoogleMapsAPI);
+
+/* --- ✅ NEW: Safety-Based Color System --- */
+const getSafetyColor = (safetyScore) => {
+  if (safetyScore >= 75) return "#10b981";  // Green - Safe
+  if (safetyScore >= 60) return "#f59e0b";  // Yellow/Orange - Moderate
+  return "#ef4444";  // Red - Unsafe
+};
+
+const getSafetyLabel = (safetyScore) => {
+  if (safetyScore >= 75) return { text: "SAFE", color: "#10b981" };
+  if (safetyScore >= 60) return { text: "MODERATE", color: "#f59e0b" };
+  return { text: "UNSAFE", color: "#ef4444" };
+};
 
 /* --- Config --- */
 const routeColors = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6"];
@@ -68,6 +81,11 @@ const feedbackConfig = {
 /* --- 1. Map Initialization --- */
 window.initMap = function () {
   console.log("🗺️ Map Starting...");
+  console.log('🎨 Safety Color System:');
+  console.log('   ✅ Green: Score >= 75 (SAFE)');
+  console.log('   ⚠️ Yellow: Score 60-74 (MODERATE)');
+  console.log('   ❌ Red: Score < 60 (UNSAFE)');
+  
   map = new google.maps.Map(document.getElementById("map"), {
     center: { lat: 17.385, lng: 78.4867 },
     zoom: 12,
@@ -152,6 +170,8 @@ window.findRoutes = function () {
 };
 
 function sendToBackendForAnalysis(source, destination) {
+  console.log(`🔍 Sending route request to backend: ${source} → ${destination}`);
+  
   fetch(`${window.BACKEND_URL}/get-routes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -166,6 +186,11 @@ function sendToBackendForAnalysis(source, destination) {
         alert("Server Error: " + data.error);
         return;
       }
+
+      console.log(`📊 Backend returned ${data.length} routes:`);
+      data.forEach((route, index) => {
+        console.log(`   Route ${index + 1}: ${route.summary || 'Unknown'} - Safety: ${route.safety_score}`);
+      });
 
       if (Array.isArray(data) && data.length > 0) {
         currentRoutes = data;
@@ -182,25 +207,23 @@ function sendToBackendForAnalysis(source, destination) {
     });
 }
 
-/* --- 3. UI Display --- */
+/* --- 3. ✅ UPDATED: UI Display with Safety Colors --- */
 function displayRouteCards(routes) {
   const container = document.getElementById("routes-list");
   if (!container) return;
   container.innerHTML = "";
 
-  routes.forEach((route, index) => {
-    let scoreColor = "#10b981";
-    let scoreText = "SAFE";
-    const score = route.safety_score || 0;
+  console.log(`📊 Displaying ${routes.length} route cards with safety colors:`);
 
-    if (score < 70) {
-      scoreColor = "#f59e0b";
-      scoreText = "MODERATE";
-    }
-    if (score < 40) {
-      scoreColor = "#ef4444";
-      scoreText = "UNSAFE";
-    }
+  routes.forEach((route, index) => {
+    const score = route.safety_score || 0;
+    
+    // ✅ Get safety-based color and label
+    const safetyInfo = getSafetyLabel(score);
+    const scoreColor = safetyInfo.color;
+    const scoreText = safetyInfo.text;
+    
+    console.log(`📊 Route ${index + 1}: Score ${score} → ${scoreText} (${scoreColor})`);
 
     const card = document.createElement("div");
     card.className = "route-card";
@@ -226,6 +249,8 @@ function displayRouteCards(routes) {
     `;
     container.appendChild(card);
   });
+  
+  console.log(`✅ All ${routes.length} route cards displayed with safety colors`);
 }
 
 window.selectRoute = function (index) {
@@ -250,28 +275,88 @@ window.selectRoute = function (index) {
   }
 };
 
+/* --- ✅ UPDATED: Route Rendering with Safety Colors --- */
 function renderAllRoutes(selectedIndex) {
   rendererArray.forEach((r) => r.setMap(null));
   rendererArray = [];
 
   if (!lastDirectionsResult) return;
 
-  lastDirectionsResult.routes.forEach((route, index) => {
+  // Handle both real Google routes and synthetic routes
+  const totalRoutes = Math.max(lastDirectionsResult.routes.length, currentRoutes.length);
+  
+  for (let index = 0; index < totalRoutes; index++) {
     const isSelected = index === selectedIndex;
-    const renderer = new google.maps.DirectionsRenderer({
-      map: map,
-      directions: lastDirectionsResult,
-      routeIndex: index,
-      suppressMarkers: isSelected,
-      polylineOptions: {
-        strokeColor: isSelected ? routeColors[index % routeColors.length] : "#94a3b8",
-        strokeOpacity: isSelected ? 1.0 : 0.4,
-        strokeWeight: isSelected ? 6 : 4,
-        zIndex: isSelected ? 100 : 1
+    const hasGoogleRoute = index < lastDirectionsResult.routes.length;
+    const hasRouteData = index < currentRoutes.length;
+    
+    // ✅ Get safety-based color for ALL routes (not just selected)
+    let routeColor = "#94a3b8"; // Default gray fallback
+    
+    if (hasRouteData && currentRoutes[index]) {
+      const safetyScore = currentRoutes[index].safety_score || 0;
+      routeColor = getSafetyColor(safetyScore);
+      
+      console.log(`🎨 Rendering Route ${index + 1}:`);
+      console.log(`   Safety Score: ${safetyScore}`);
+      console.log(`   Route Color: ${routeColor}`);
+      console.log(`   Selected: ${isSelected ? 'YES' : 'NO'}`);
+      console.log(`   Has Google Route: ${hasGoogleRoute ? 'YES' : 'NO (Synthetic)'}`);
+      console.log(`   Status: ${safetyScore >= 75 ? 'SAFE ✅' : safetyScore >= 60 ? 'MODERATE ⚠️' : 'UNSAFE ❌'}`);
+    } else {
+      console.log(`⚠️ Route ${index + 1}: No safety data available, using gray`);
+    }
+
+    if (hasGoogleRoute) {
+      // Use Google's DirectionsRenderer for real routes
+      const renderer = new google.maps.DirectionsRenderer({
+        map: map,
+        directions: lastDirectionsResult,
+        routeIndex: index,
+        suppressMarkers: isSelected,
+        polylineOptions: {
+          strokeColor: routeColor,
+          strokeOpacity: isSelected ? 1.0 : 0.6,
+          strokeWeight: isSelected ? 6 : 4,
+          zIndex: isSelected ? 100 : 10 + index
+        }
+      });
+      rendererArray.push(renderer);
+    } else if (hasRouteData && currentRoutes[index] && currentRoutes[index].polyline) {
+      // Create custom polyline for synthetic routes
+      console.log(`🔄 Creating custom polyline for synthetic Route ${index + 1}`);
+      
+      try {
+        // Use Google's geometry library to decode polyline
+        const routePoints = google.maps.geometry.encoding.decodePath(currentRoutes[index].polyline);
+        
+        const customPolyline = new google.maps.Polyline({
+          path: routePoints,
+          geodesic: true,
+          strokeColor: routeColor,
+          strokeOpacity: isSelected ? 1.0 : 0.6,
+          strokeWeight: isSelected ? 6 : 4,
+          zIndex: isSelected ? 100 : 10 + index,
+          map: map
+        });
+        
+        // Add click handler to select this route
+        customPolyline.addListener('click', () => {
+          selectRoute(index);
+        });
+        
+        // Store in rendererArray for cleanup (wrap in object to match DirectionsRenderer interface)
+        rendererArray.push({
+          setMap: (mapInstance) => customPolyline.setMap(mapInstance)
+        });
+        
+        console.log(`✅ Custom polyline created for Route ${index + 1} with ${routePoints.length} points`);
+        
+      } catch (error) {
+        console.error(`❌ Error creating custom polyline for Route ${index + 1}:`, error);
       }
-    });
-    rendererArray.push(renderer);
-  });
+    }
+  }
 }
 
 /* --- 4. Helpers --- */
@@ -1127,7 +1212,7 @@ window.testBackendConnection = async function() {
     }
 };
 
-console.log("✅ SafeRoute JavaScript loaded successfully");
+console.log("✅ SafeRoute JavaScript with Safety-Based Route Colors loaded successfully");
 
 /* --- User Management --- */
 let currentUserName = null;

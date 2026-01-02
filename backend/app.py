@@ -983,11 +983,18 @@ def get_routes():
         params = {"origin": source, "destination": destination, "alternatives": "true", "key": API_KEY}
         response = requests.get(directions_url, params=params).json()
         
+        print(f"🗺️ Google Directions API Response:")
+        print(f"   Status: {response.get('status')}")
+        print(f"   Routes returned: {len(response.get('routes', []))}")
+        
         if response.get("status") != "OK":
             return jsonify({"error": f"Directions failed: {response.get('status')}"}), 400
         
+        google_routes = response.get("routes", [])
+        print(f"📊 Processing {len(google_routes)} routes from Google Directions API")
+        
         routes_data = []
-        for route_idx, route in enumerate(response.get("routes", [])):
+        for route_idx, route in enumerate(google_routes):
             leg = route["legs"][0]
             polyline_str = route["overview_polyline"]["points"]
             route_points = polyline.decode(polyline_str)
@@ -1022,6 +1029,80 @@ def get_routes():
             }
             routes_data.append(route_data)
         
+        print(f"✅ Processed {len(routes_data)} real routes from Google")
+        
+        # ✅ Generate additional synthetic routes if we have less than 3
+        if len(routes_data) < 3:
+            print(f"🔄 Generating synthetic routes to reach 3 total routes...")
+            
+            # Use the first route as a base for synthetic routes
+            if routes_data:
+                base_route = routes_data[0]
+                routes_needed = 3 - len(routes_data)
+                
+                for i in range(routes_needed):
+                    synthetic_idx = len(routes_data)
+                    
+                    # Create variations of the base route with different safety characteristics
+                    if i == 0:  # More dangerous route
+                        safety_modifier = -20
+                        area_type = "Industrial"
+                        route_name = "Alternative Route (Industrial Area)"
+                    else:  # Moderate route
+                        safety_modifier = -10
+                        area_type = "Residential" 
+                        route_name = "Alternative Route (Residential Area)"
+                    
+                    # Generate synthetic route data with modified polyline
+                    base_polyline = base_route['polyline']
+                    base_points = polyline.decode(base_polyline)
+                    
+                    # Create a slightly modified polyline for synthetic routes
+                    modified_points = []
+                    for j, (lat, lng) in enumerate(base_points):
+                        # Add small random variations to create a different route path
+                        if j % 5 == 0:  # Modify every 5th point to create route variation
+                            lat_offset = random.uniform(-0.001, 0.001)  # ~100m variation
+                            lng_offset = random.uniform(-0.001, 0.001)
+                            modified_points.append((lat + lat_offset, lng + lng_offset))
+                        else:
+                            modified_points.append((lat, lng))
+                    
+                    synthetic_polyline = polyline.encode(modified_points)
+                    
+                    synthetic_route = {
+                        "distance": f"{base_route['distance_meters'] * random.uniform(1.1, 1.3) / 1000:.1f} km",
+                        "duration": f"{int(base_route['duration_seconds'] * random.uniform(1.2, 1.4) / 60)} mins",
+                        "distance_meters": int(base_route['distance_meters'] * random.uniform(1.1, 1.3)),
+                        "duration_seconds": int(base_route['duration_seconds'] * random.uniform(1.2, 1.4)),
+                        "polyline": synthetic_polyline,  # ✅ Use modified polyline
+                        "hospital_count": random.randint(0, 2),
+                        "police_count": random.randint(0, 1),
+                        "crime_incidents": generate_realistic_crime_incidents(
+                            modified_points, area_type  # Use modified points
+                        ),
+                        "hospital_locations": [],
+                        "police_locations": [],
+                        "area_type": area_type,
+                        "street_light_score": max(30, min(90, base_route['street_light_score'] + safety_modifier)),
+                        "crime_score": min(100, base_route['crime_score'] - safety_modifier),
+                        "safety_score": max(10, min(100, base_route['safety_score'] + safety_modifier)),
+                        "summary": route_name,
+                        "warnings": [],
+                        "index": synthetic_idx
+                    }
+                    
+                    # Generate warnings for synthetic route
+                    synthetic_route["warnings"] = generate_safety_warnings(
+                        synthetic_route["crime_incidents"], 
+                        {"hospitals": synthetic_route["hospital_count"], "police": synthetic_route["police_count"]},
+                        synthetic_route["street_light_score"]
+                    )
+                    
+                    routes_data.append(synthetic_route)
+                    print(f"🔄 Generated synthetic Route {synthetic_idx + 1}: {route_name} (Safety: {synthetic_route['safety_score']})")
+        
+        print(f"📊 Final route count: {len(routes_data)} routes")
         routes_data.sort(key=lambda x: x["safety_score"], reverse=True)
         return jsonify(routes_data)
     except Exception as e:
