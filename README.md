@@ -50,7 +50,8 @@ SafeRoute/
 │   ├── app.py              # Main application with AI integration
 │   └── saferoute.db        # SQLite database
 ├── frontend/               # Static Web Application
-│   ├── index.html          # Main user interface
+│   ├── index.html          # Landing page (default)
+│   ├── app.html            # Main user interface
 │   ├── admin.html          # Admin dashboard
 │   ├── main.js             # Core JavaScript functionality
 │   ├── style.css           # Modern UI styling
@@ -97,11 +98,11 @@ pip install -r requirements.txt
 python backend/app.py
 
 # Open frontend (in another terminal)
-# Serve frontend files on localhost:8000 or open index.html directly
+# Serve frontend files on localhost:8000 or open index.html (landing) or app.html (main app) directly
 ```
 
 ### 5. Access Application
-- **Main App**: `http://localhost:5000` or open `frontend/index.html`
+- **Main App**: `http://localhost:5000` or open `frontend/app.html`
 - **Admin Dashboard**: `frontend/admin.html`
 
 ## 🔧 API Endpoints
