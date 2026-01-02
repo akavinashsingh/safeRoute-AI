@@ -352,6 +352,7 @@ window.sendEmergencyAlert = function() {
             try {
                 console.log('📡 Sending SOS to backend...');
                 console.log('📍 Coordinates:', { lat, lng, accuracy });
+                console.log('👤 User Name:', getUserName());
                 console.log('🌐 Backend URL:', `${window.BACKEND_URL}/send-alert`);
                 console.log('🌐 Current page URL:', window.location.href);
                 
@@ -362,7 +363,12 @@ window.sendEmergencyAlert = function() {
                 const response = await fetch(`${window.BACKEND_URL}/send-alert`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lat: lat, lng: lng, accuracy: accuracy }),
+                    body: JSON.stringify({ 
+                        lat: lat, 
+                        lng: lng, 
+                        accuracy: accuracy,
+                        user_name: getUserName() // Include user name
+                    }),
                     signal: controller.signal
                 });
                 
@@ -825,9 +831,12 @@ window.submitFeedback = async function() {
                 lat: coords.lat,
                 lng: coords.lng,
                 type: type,
-                description: desc
+                description: desc,
+                user_name: getUserName() // Include user name
             })
         });
+        
+        console.log('📡 Feedback sent with user name:', getUserName());
        
         if (response.ok) {
             const data = await response.json();
@@ -1119,3 +1128,138 @@ window.testBackendConnection = async function() {
 };
 
 console.log("✅ SafeRoute JavaScript loaded successfully");
+
+/* --- User Management --- */
+let currentUserName = null;
+
+// Check if user has a saved name, if not show welcome modal
+window.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 SafeRoute: Page loaded, checking user name...');
+    
+    // Check for saved user name
+    const savedName = localStorage.getItem('saferoute_user_name');
+    
+    if (savedName && savedName.trim()) {
+        currentUserName = savedName.trim();
+        console.log(`👤 Welcome back, ${currentUserName}!`);
+        
+        // Update navbar to show user name
+        updateNavbarWithUserName();
+    } else {
+        console.log('👤 New user detected, showing welcome modal...');
+        // Show welcome modal after a short delay
+        setTimeout(() => {
+            showWelcomeModal();
+        }, 500);
+    }
+});
+
+function showWelcomeModal() {
+    const modal = document.getElementById('welcome-modal');
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+    
+    // Focus on input field
+    const input = document.getElementById('user-name-input');
+    setTimeout(() => input.focus(), 300);
+    
+    // Handle Enter key
+    input.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            saveUserName();
+        }
+    });
+    
+    // Prevent closing by clicking outside
+    modal.onclick = function(e) {
+        e.stopPropagation();
+    };
+}
+
+window.saveUserName = function() {
+    const input = document.getElementById('user-name-input');
+    const name = input.value.trim();
+    
+    if (!name) {
+        alert('Please enter your name to continue');
+        input.focus();
+        return;
+    }
+    
+    if (name.length < 2) {
+        alert('Please enter a valid name (at least 2 characters)');
+        input.focus();
+        return;
+    }
+    
+    // Save name locally
+    localStorage.setItem('saferoute_user_name', name);
+    currentUserName = name;
+    
+    console.log(`✅ User name saved: ${currentUserName}`);
+    
+    // Close welcome modal
+    const modal = document.getElementById('welcome-modal');
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+    
+    // Update navbar
+    updateNavbarWithUserName();
+    
+    // Show success message
+    setTimeout(() => {
+        alert(`Welcome to SafeRoute, ${currentUserName}! 🛡️\n\nYour safety is our priority. In case of emergency, your name will help responders assist you better.`);
+    }, 500);
+};
+
+function updateNavbarWithUserName() {
+    if (!currentUserName) return;
+    
+    // Add user name to navbar
+    const navActions = document.querySelector('.nav-actions');
+    
+    // Remove existing user button if any
+    const existingUserBtn = document.querySelector('.user-name-btn');
+    if (existingUserBtn) {
+        existingUserBtn.remove();
+    }
+    
+    // Create user name button
+    const userBtn = document.createElement('button');
+    userBtn.className = 'nav-btn user-name-btn';
+    userBtn.style.background = 'var(--accent)';
+    userBtn.style.color = 'white';
+    userBtn.title = 'Change Name';
+    userBtn.onclick = changeUserName;
+    
+    userBtn.innerHTML = `<i class="fa-solid fa-user"></i> <span class="user-name-text">${currentUserName}</span>`;
+    
+    // Insert before the last button (theme toggle)
+    const themeBtn = navActions.querySelector('.icon-only');
+    navActions.insertBefore(userBtn, themeBtn);
+}
+
+window.changeUserName = function() {
+    const newName = prompt(`Change your name:\n\nCurrent: ${currentUserName}`, currentUserName);
+    
+    if (newName && newName.trim() && newName.trim() !== currentUserName) {
+        const trimmedName = newName.trim();
+        
+        if (trimmedName.length < 2) {
+            alert('Please enter a valid name (at least 2 characters)');
+            return;
+        }
+        
+        localStorage.setItem('saferoute_user_name', trimmedName);
+        currentUserName = trimmedName;
+        
+        updateNavbarWithUserName();
+        alert(`✅ Name updated to: ${currentUserName}`);
+        
+        console.log(`👤 User name changed to: ${currentUserName}`);
+    }
+};
+
+function getUserName() {
+    return currentUserName || 'Anonymous User';
+}

@@ -767,15 +767,16 @@ def init_db():
     conn = sqlite3.connect('saferoute.db')
     c = conn.cursor()
    
-    # Create SOS alerts table with timestamp column
+    # Create SOS alerts table with user_name column
     c.execute('''CREATE TABLE IF NOT EXISTS sos_alerts
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   lat REAL NOT NULL,
                   lng REAL NOT NULL,
                   timestamp DATETIME NOT NULL,
-                  status TEXT DEFAULT 'PENDING')''')
+                  status TEXT DEFAULT 'PENDING',
+                  user_name TEXT DEFAULT 'Anonymous')''')
    
-    # Create feedback table with timestamp column
+    # Create feedback table with user_name column
     c.execute('''CREATE TABLE IF NOT EXISTS route_feedback
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   lat REAL,
@@ -783,11 +784,22 @@ def init_db():
                   type TEXT,
                   description TEXT,
                   timestamp DATETIME NOT NULL,
-                  route_polyline TEXT)''')
+                  route_polyline TEXT,
+                  user_name TEXT DEFAULT 'Anonymous')''')
+   
+    # Add user_name column to existing tables if they don't have it
+    try:
+        c.execute("ALTER TABLE sos_alerts ADD COLUMN user_name TEXT DEFAULT 'Anonymous'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    
+    try:
+        c.execute("ALTER TABLE route_feedback ADD COLUMN user_name TEXT DEFAULT 'Anonymous'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
    
     conn.commit()
     conn.close()
-    print("✅ Database initialized with proper timestamp columns")
 
 init_db()
 
@@ -800,16 +812,24 @@ def send_alert():
     try:
         data = request.json
         lat, lng = data.get("lat"), data.get("lng")
+        user_name = data.get("user_name", "Anonymous User")  # Get user name
+        
         if not lat or not lng:
             return jsonify({"error": "Lat/Lng required"}), 400
+       
+        # Clean and validate user name
+        if user_name:
+            user_name = user_name.strip()[:50]  # Limit to 50 characters
+        if not user_name:
+            user_name = "Anonymous User"
        
         # Get current timestamp
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
        
         conn = sqlite3.connect('saferoute.db')
         c = conn.cursor()
-        c.execute("INSERT INTO sos_alerts (lat, lng, timestamp, status) VALUES (?, ?, ?, 'PENDING')",
-                  (lat, lng, current_time))
+        c.execute("INSERT INTO sos_alerts (lat, lng, timestamp, status, user_name) VALUES (?, ?, ?, 'PENDING', ?)",
+                  (lat, lng, current_time, user_name))
         alert_id = c.lastrowid
         conn.commit()
         conn.close()
@@ -856,7 +876,8 @@ def send_alert():
             'lat': lat,
             'lng': lng,
             'time': current_time,
-            'status': 'PENDING'
+            'status': 'PENDING',
+            'user_name': user_name  # Include user name
         }, room='admin')
        
         print(f"🚨 SOS Logged: ID={alert_id}, Location=({lat}, {lng}) at {current_time}")
@@ -882,10 +903,10 @@ def get_all_alerts():
         c = conn.cursor()
        
         if status_filter:
-            c.execute("SELECT id, lat, lng, timestamp, status FROM sos_alerts WHERE status = ? ORDER BY timestamp DESC",
+            c.execute("SELECT id, lat, lng, timestamp, status, user_name FROM sos_alerts WHERE status = ? ORDER BY timestamp DESC",
                       (status_filter,))
         else:
-            c.execute("SELECT id, lat, lng, timestamp, status FROM sos_alerts ORDER BY timestamp DESC")
+            c.execute("SELECT id, lat, lng, timestamp, status, user_name FROM sos_alerts ORDER BY timestamp DESC")
        
         alerts = []
         for row in c.fetchall():
@@ -894,7 +915,8 @@ def get_all_alerts():
                 "lat": row[1],
                 "lng": row[2],
                 "time": row[3],  # This is the actual timestamp from database
-                "status": row[4]
+                "status": row[4],
+                "user_name": row[5] or "Anonymous User"  # Include user name
             })
        
         conn.close()
@@ -1026,6 +1048,7 @@ def post_feedback():
         ftype = data.get("type")
         desc = data.get("description", "")
         polyline_str = data.get("route_polyline", "")
+        user_name = data.get("user_name", "Anonymous User")  # Get user name
        
         if lat:
             try:
@@ -1042,13 +1065,19 @@ def post_feedback():
         if not lat or not lng or not ftype:
             return jsonify({"error": "Latitude, Longitude, and Type are required"}), 400
        
+        # Clean and validate user name
+        if user_name:
+            user_name = user_name.strip()[:50]  # Limit to 50 characters
+        if not user_name:
+            user_name = "Anonymous User"
+       
         # Get current timestamp
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
        
         conn = sqlite3.connect('saferoute.db')
         c = conn.cursor()
-        c.execute("INSERT INTO route_feedback (lat, lng, type, description, route_polyline, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-                  (lat, lng, ftype, desc, polyline_str, current_time))
+        c.execute("INSERT INTO route_feedback (lat, lng, type, description, route_polyline, timestamp, user_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                  (lat, lng, ftype, desc, polyline_str, current_time, user_name))
         feedback_id = c.lastrowid
         conn.commit()
         conn.close()
@@ -1059,6 +1088,7 @@ def post_feedback():
             'lng': lng,
             'type': ftype,
             'description': desc,
+            'user_name': user_name,  # Include user name
             'time': current_time
         }
        
@@ -1088,7 +1118,7 @@ def get_feedback():
        
         conn = sqlite3.connect('saferoute.db')
         c = conn.cursor()
-        c.execute("SELECT id, lat, lng, type, description, timestamp FROM route_feedback ORDER BY timestamp DESC LIMIT 100")
+        c.execute("SELECT id, lat, lng, type, description, timestamp, user_name FROM route_feedback ORDER BY timestamp DESC LIMIT 100")
         rows = c.fetchall()
        
         feedbacks = []
@@ -1100,7 +1130,8 @@ def get_feedback():
                     "lng": row[2],
                     "type": row[3],
                     "description": row[4],
-                    "time": row[5]
+                    "time": row[5],
+                    "user_name": row[6] or "Anonymous User"  # Include user name
                 })
        
         conn.close()

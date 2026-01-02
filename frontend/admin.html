@@ -168,6 +168,9 @@
                             </div>
                             <div>
                                 <h4>SOS Alert #${a.id}</h4>
+                                <div style="font-size:0.9rem; color:#2563eb; font-weight:600; margin:2px 0;">
+                                    <i class="fa-solid fa-user"></i> ${a.user_name || 'Anonymous User'}
+                                </div>
                                 <div style="font-size:0.85rem; color:#64748b;">${new Date(a.time).toLocaleString()}</div>
                             </div>
                         </div>
@@ -200,6 +203,9 @@
                             <div class="icon-box"><i class="fa-solid fa-circle-exclamation"></i></div>
                             <div>
                                 <h4 style="text-transform:capitalize">${r.type}</h4>
+                                <div style="font-size:0.9rem; color:#2563eb; font-weight:600; margin:2px 0;">
+                                    <i class="fa-solid fa-user"></i> ${r.user_name || 'Anonymous User'}
+                                </div>
                                 <div style="font-size:0.9rem; color:#475569;">${r.description}</div>
                             </div>
                         </div>

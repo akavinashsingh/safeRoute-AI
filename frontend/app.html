@@ -195,5 +195,38 @@
         </div>
     </div>
 
+    <!-- Welcome/Name Input Modal -->
+    <div id="welcome-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, var(--accent), #059669); color: white;">
+                <h2><i class="fa-solid fa-user-plus"></i> Welcome to SafeRoute</h2>
+            </div>
+            <div class="modal-body" style="text-align: center;">
+                <div style="margin-bottom: 20px;">
+                    <i class="fa-solid fa-shield-halved" style="font-size: 3rem; color: var(--accent); margin-bottom: 15px;"></i>
+                    <p style="font-size: 1.1rem; color: var(--text-main); margin-bottom: 10px;">
+                        <strong>Your Safety, Our Priority</strong>
+                    </p>
+                    <p style="color: var(--text-light); font-size: 0.9rem;">
+                        Please enter your name so we can provide personalized emergency assistance if needed.
+                    </p>
+                </div>
+                
+                <div class="input-wrapper" style="margin-bottom: 20px;">
+                    <i class="fa-solid fa-user input-icon"></i>
+                    <input type="text" id="user-name-input" placeholder="Enter your name" maxlength="50" style="text-align: center; font-size: 1.1rem;">
+                </div>
+                
+                <button onclick="saveUserName()" class="primary-btn" style="width: 100%; padding: 12px; font-size: 1rem;">
+                    <i class="fa-solid fa-check"></i> Continue to SafeRoute
+                </button>
+                
+                <p style="font-size: 0.8rem; color: var(--text-light); margin-top: 15px;">
+                    <i class="fa-solid fa-lock"></i> Your name is stored locally and only shared during emergencies
+                </p>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
