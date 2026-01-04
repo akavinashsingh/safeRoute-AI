@@ -228,7 +228,7 @@
         }
 
         async function clearAllData() {
-            const confirmed = confirm("🗑️ Wipe ALL Data?\\n\\nThis will permanently delete:\\n• All SOS alerts\\n• All community feedback\\n• All route data\\n\\nThis action cannot be undone!");
+            const confirmed = confirm("Permanently delete all SOS alerts and community feedback? This cannot be undone.");
             
             if (confirmed) {
                 try {
@@ -252,7 +252,7 @@
                         loadAlerts();
                         loadFeedback();
                         
-                        alert(`✅ Data Cleared Successfully!\\n\\n• ${result.sos_deleted} SOS alerts deleted\\n• ${result.feedback_deleted} feedback items deleted\\n\\nAll data has been permanently removed.`);
+                        alert(`Data cleared: ${result.sos_deleted} alerts & ${result.feedback_deleted} reports deleted`);
                         
                         console.log('✅ Admin UI refreshed');
                         

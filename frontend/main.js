@@ -2,6 +2,7 @@
 let map, directionsService;
 let rendererArray = [], currentRoutes = [], lastDirectionsResult = null;
 let userMarker = null, crimeMarkers = [], feedbackMarkers = [];
+let hospitalMarkers = [], policeMarkers = []; // Markers for hospitals and police stations
 let allFeedbacks = [];
 const socket = io(window.BACKEND_URL);
 
@@ -9,14 +10,23 @@ const socket = io(window.BACKEND_URL);
 async function loadGoogleMapsAPI() {
     try {
         console.log('🔐 Loading Google Maps API securely...');
+        console.log('🌐 Backend URL:', window.BACKEND_URL);
         
         // Get API key from backend securely
         const response = await fetch(`${window.BACKEND_URL}/get-maps-config`);
-        const config = await response.json();
         
-        if (!config.google_maps_api_key) {
-            throw new Error('Google Maps API key not available');
+        if (!response.ok) {
+            throw new Error(`Backend responded with status ${response.status}`);
         }
+        
+        const config = await response.json();
+        console.log('📦 Config received:', config ? 'OK' : 'Empty');
+        
+        if (!config || !config.google_maps_api_key) {
+            throw new Error('Google Maps API key not available from backend');
+        }
+        
+        console.log('🔑 API key received (length:', config.google_maps_api_key.length, ')');
         
         // Load Google Maps API dynamically
         const script = document.createElement('script');
@@ -26,16 +36,29 @@ async function loadGoogleMapsAPI() {
         
         // Add error handling
         script.onerror = () => {
-            console.error('❌ Failed to load Google Maps API');
-            alert('Failed to load Google Maps. Please check your internet connection.');
+            console.error('❌ Failed to load Google Maps API script');
+            alert('Failed to load Google Maps. Please check:\n1. Internet connection\n2. Google Maps API key is valid\n3. Browser console for details');
+        };
+        
+        // Add timeout check
+        let timeoutId = setTimeout(() => {
+            if (!window.google || !window.google.maps) {
+                console.error('❌ Google Maps API load timeout');
+                alert('Google Maps API is taking too long to load. Please refresh the page.');
+            }
+        }, 10000); // 10 second timeout
+        
+        script.onload = () => {
+            clearTimeout(timeoutId);
+            console.log('✅ Google Maps API script loaded successfully');
         };
         
         document.head.appendChild(script);
-        console.log('✅ Google Maps API script loaded');
+        console.log('📝 Google Maps API script tag added to page');
         
     } catch (error) {
         console.error('❌ Error loading Google Maps API:', error);
-        alert('Failed to load Google Maps configuration. Please refresh the page.');
+        alert(`Failed to load Google Maps configuration:\n${error.message}\n\nPlease check:\n1. Backend server is running\n2. Backend URL is correct: ${window.BACKEND_URL}\n3. Browser console for details`);
     }
 }
 
@@ -80,24 +103,38 @@ const feedbackConfig = {
 
 /* --- 1. Map Initialization --- */
 window.initMap = function () {
-  console.log("🗺️ Map Starting...");
-  console.log('🎨 Safety Color System:');
-  console.log('   ✅ Green: Score >= 75 (SAFE)');
-  console.log('   ⚠️ Yellow: Score 60-74 (MODERATE)');
-  console.log('   ❌ Red: Score < 60 (UNSAFE)');
-  
-  map = new google.maps.Map(document.getElementById("map"), {
-    center: { lat: 17.385, lng: 78.4867 },
-    zoom: 12,
-    mapTypeControl: false,
-    fullscreenControl: false,
-    streetViewControl: false,
-    zoomControl: false,
-    styles: []
-  });
-  directionsService = new google.maps.DirectionsService();
-  initializeSocketIO();
-  fetchFeedbackForRoute();
+  try {
+    console.log("🗺️ Map Starting...");
+    console.log('🎨 Safety Color System:');
+    console.log('   ✅ Green: Score >= 75 (SAFE)');
+    console.log('   ⚠️ Yellow: Score 60-74 (MODERATE)');
+    console.log('   ❌ Red: Score < 60 (UNSAFE)');
+    
+    const mapElement = document.getElementById("map");
+    if (!mapElement) {
+      console.error("❌ Map element not found!");
+      alert("Map container not found. Please refresh the page.");
+      return;
+    }
+    
+    map = new google.maps.Map(mapElement, {
+      center: { lat: 17.385, lng: 78.4867 },
+      zoom: 12,
+      mapTypeControl: false,
+      fullscreenControl: false,
+      streetViewControl: false,
+      zoomControl: false,
+      styles: []
+    });
+    
+    console.log("✅ Map initialized successfully");
+    directionsService = new google.maps.DirectionsService();
+    initializeSocketIO();
+    fetchFeedbackForRoute();
+  } catch (error) {
+    console.error("❌ Error initializing map:", error);
+    alert("Failed to initialize map. Please check the console for details.");
+  }
 };
 
 function initializeSocketIO() {
@@ -117,11 +154,12 @@ function initializeSocketIO() {
     updateFeedbackListUI();
     addFeedbackMarker(data);
   });
-  socket.on("data_cleared", (data) => {
+    socket.on("data_cleared", (data) => {
     console.log('🗑️ Data cleared event received:', data);
     allFeedbacks = [];
     clearFeedback();
     clearCrimeVisualization();
+    clearHospitalsAndPolice(); // Clear hospital and police markers
     updateFeedbackListUI();
     
     // Clear displayed routes
@@ -136,9 +174,9 @@ function initializeSocketIO() {
     console.log('✅ Local data cleared successfully');
     
     if (data && data.sos_deleted !== undefined && data.feedback_deleted !== undefined) {
-      alert(`🗑️ System Data Cleared Remotely\\n\\n• ${data.sos_deleted} SOS alerts deleted\\n• ${data.feedback_deleted} feedback items deleted`);
+      alert(`🗑️ Data cleared: ${data.sos_deleted} alerts & ${data.feedback_deleted} reports deleted`);
     } else {
-      alert("🗑️ System data cleared remotely.");
+      alert("🗑️ System data cleared.");
     }
   });
 }
@@ -261,6 +299,8 @@ window.selectRoute = function (index) {
   renderAllRoutes(index);
   if (currentRoutes[index]) {
     showCrimeIncidents(currentRoutes[index].crime_incidents);
+    // Show hospitals and police stations for selected route
+    showHospitalsAndPolice(currentRoutes[index]);
   }
   
   // Auto-close sidebar on mobile after route selection
@@ -279,6 +319,9 @@ window.selectRoute = function (index) {
 function renderAllRoutes(selectedIndex) {
   rendererArray.forEach((r) => r.setMap(null));
   rendererArray = [];
+  
+  // Clear hospital and police markers when switching routes
+  clearHospitalsAndPolice();
 
   if (!lastDirectionsResult) return;
 
@@ -392,7 +435,7 @@ window.getCurrentLocationForInput = function () {
 
 /* --- 5. SOS Emergency Alert --- */
 window.sendEmergencyAlert = function() {
-    if(!confirm("⚠️ Are you sure you want to send an SOS Alert?\\n\\nThis will broadcast your exact location to emergency responders and get AI-powered emergency assistance suggestions.")) {
+    if(!confirm("⚠️ Send SOS Alert? Your location will be broadcast to emergency responders.")) {
         return;
     }
     
@@ -473,6 +516,9 @@ window.sendEmergencyAlert = function() {
                 
                 if (response.ok) {
                     console.log("✅ SOS Alert sent successfully:", data);
+                    
+                    // Show simple success alert
+                    alert(`🚨 SOS Alert Sent!\nAlert ID: ${data.alert_id}\nEmergency services notified`);
                     
                     // Enhanced check for emergency suggestions
                     if (!data.emergency_suggestions) {
@@ -1013,6 +1059,132 @@ function clearCrimeVisualization() {
   crimeMarkers = [];
 }
 
+function clearHospitalsAndPolice() {
+  hospitalMarkers.forEach((m) => {
+    if (m.marker) m.marker.setMap(null);
+    if (m.infoWindow) m.infoWindow.close();
+  });
+  policeMarkers.forEach((m) => {
+    if (m.marker) m.marker.setMap(null);
+    if (m.infoWindow) m.infoWindow.close();
+  });
+  hospitalMarkers = [];
+  policeMarkers = [];
+}
+
+function showHospitalsAndPolice(routeData) {
+  // Clear existing markers first
+  clearHospitalsAndPolice();
+  
+  if (!routeData) return;
+  
+  // Display hospitals
+  if (routeData.hospital_locations && routeData.hospital_locations.length > 0) {
+    console.log(`🏥 Displaying ${routeData.hospital_locations.length} hospitals on map`);
+    
+    routeData.hospital_locations.forEach((hospital) => {
+      const marker = new google.maps.Marker({
+        position: { lat: hospital.lat, lng: hospital.lng },
+        map: map,
+        title: hospital.name || 'Hospital',
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 10,
+          fillColor: '#dc3545', // Red for hospitals
+          fillOpacity: 0.9,
+          strokeColor: '#ffffff',
+          strokeWeight: 2
+        },
+        label: {
+          text: 'H',
+          color: '#ffffff',
+          fontSize: '12px',
+          fontWeight: 'bold'
+        }
+      });
+      
+      const infoWindow = new google.maps.InfoWindow({
+        content: `
+          <div style="padding: 12px; max-width: 250px;">
+            <h4 style="margin: 0 0 8px 0; color: #dc3545; font-size: 16px;">
+              <i class="fa-solid fa-hospital"></i> ${hospital.name || 'Hospital'}
+            </h4>
+            <p style="margin: 4px 0; font-size: 13px; color: #666;">${hospital.address || 'Address not available'}</p>
+            <p style="margin: 4px 0; font-size: 13px; color: #28a745; font-weight: 600;">
+              <i class="fa-solid fa-phone"></i> ${hospital.phone || 'Emergency: 112'}
+            </p>
+            ${hospital.distance ? `<p style="margin: 4px 0; font-size: 12px; color: #999;"><i class="fa-solid fa-ruler"></i> ${hospital.distance} from route</p>` : ''}
+            <button onclick="navigateToEmergencyService('${(hospital.name || 'Hospital').replace(/'/g, "\\'")}', ${hospital.lat}, ${hospital.lng}, ${map.getCenter().lat()}, ${map.getCenter().lng()});" 
+                    style="margin-top: 8px; background: #007bff; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: 600;">
+              <i class="fa-solid fa-route"></i> Navigate
+            </button>
+          </div>
+        `
+      });
+      
+      marker.addListener("click", () => {
+        infoWindow.open(map, marker);
+      });
+      
+      hospitalMarkers.push({ marker, infoWindow });
+    });
+  }
+  
+  // Display police stations
+  if (routeData.police_locations && routeData.police_locations.length > 0) {
+    console.log(`👮 Displaying ${routeData.police_locations.length} police stations on map`);
+    
+    routeData.police_locations.forEach((police) => {
+      const marker = new google.maps.Marker({
+        position: { lat: police.lat, lng: police.lng },
+        map: map,
+        title: police.name || 'Police Station',
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 10,
+          fillColor: '#007bff', // Blue for police
+          fillOpacity: 0.9,
+          strokeColor: '#ffffff',
+          strokeWeight: 2
+        },
+        label: {
+          text: 'P',
+          color: '#ffffff',
+          fontSize: '12px',
+          fontWeight: 'bold'
+        }
+      });
+      
+      const infoWindow = new google.maps.InfoWindow({
+        content: `
+          <div style="padding: 12px; max-width: 250px;">
+            <h4 style="margin: 0 0 8px 0; color: #007bff; font-size: 16px;">
+              <i class="fa-solid fa-shield-halved"></i> ${police.name || 'Police Station'}
+            </h4>
+            <p style="margin: 4px 0; font-size: 13px; color: #666;">${police.address || 'Address not available'}</p>
+            <p style="margin: 4px 0; font-size: 13px; color: #28a745; font-weight: 600;">
+              <i class="fa-solid fa-phone"></i> ${police.phone || 'Emergency: 100'}
+            </p>
+            ${police.distance ? `<p style="margin: 4px 0; font-size: 12px; color: #999;"><i class="fa-solid fa-ruler"></i> ${police.distance} from route</p>` : ''}
+            <button onclick="navigateToEmergencyService('${(police.name || 'Police Station').replace(/'/g, "\\'")}', ${police.lat}, ${police.lng}, ${map.getCenter().lat()}, ${map.getCenter().lng()});" 
+                    style="margin-top: 8px; background: #007bff; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: 600;">
+              <i class="fa-solid fa-route"></i> Navigate
+            </button>
+          </div>
+        `
+      });
+      
+      marker.addListener("click", () => {
+        infoWindow.open(map, marker);
+      });
+      
+      policeMarkers.push({ marker, infoWindow });
+    });
+  }
+  
+  console.log(`✅ Displayed ${hospitalMarkers.length} hospitals and ${policeMarkers.length} police stations`);
+}
+
 function clearFeedback() {
     feedbackMarkers.forEach(item => {
         if (item.marker) item.marker.setMap(null);
@@ -1105,7 +1277,7 @@ window.fetchFeedbackForRoute = function () {
 };
 
 window.clearAllData = async function () {
-    const confirmed = confirm("🗑️ Clear All Data?\\n\\nThis will permanently delete:\\n• All SOS alerts\\n• All community feedback\\n• All route data\\n\\nThis action cannot be undone!");
+    const confirmed = confirm("🗑️ Permanently delete all SOS alerts and community feedback? This cannot be undone.");
     
     if (confirmed) {
         try {
@@ -1129,6 +1301,7 @@ window.clearAllData = async function () {
                 allFeedbacks = [];
                 clearFeedback();
                 clearCrimeVisualization();
+                clearHospitalsAndPolice(); // Clear hospital and police markers
                 updateFeedbackListUI();
                 
                 // Clear displayed routes
@@ -1140,7 +1313,7 @@ window.clearAllData = async function () {
                 const container = document.getElementById("routes-list");
                 if (container) container.innerHTML = "";
                 
-                alert(`✅ Data Cleared Successfully!\\n\\n• ${result.sos_deleted} SOS alerts deleted\\n• ${result.feedback_deleted} feedback items deleted\\n\\nAll data has been permanently removed.`);
+                alert(`✅ All data cleared successfully!\n${result.sos_deleted} alerts & ${result.feedback_deleted} reports deleted`);
                 
                 console.log('✅ Local UI cleared successfully');
                 
