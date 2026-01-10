@@ -286,7 +286,7 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ## 🏆 Hackathon Context
 
-**Built for**: GDGoC x MREM - TechSprint Hackathon  
+**Built for**:  Hackathon  
 **Theme**: Women's Safety & Community Protection  
 **Duration**:   
 **Team**: Thrivers  
