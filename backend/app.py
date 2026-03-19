@@ -72,7 +72,6 @@ if GROQ_AVAILABLE and GROQ_API_KEY:
     try:
         groq_client = Groq(api_key=GROQ_API_KEY)
         print("✅ Groq AI configured successfully")
-        print(f"🔑 Groq API Key: {GROQ_API_KEY[:10]}...{GROQ_API_KEY[-4:]}")
         
         # Test Groq connection
         test_response = groq_client.chat.completions.create(
@@ -1126,12 +1125,17 @@ def send_alert():
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
        
         conn = sqlite3.connect('saferoute.db')
-        c = conn.cursor()
-        c.execute("INSERT INTO sos_alerts (lat, lng, timestamp, status, user_name) VALUES (?, ?, ?, 'PENDING', ?)",
-                  (lat, lng, current_time, user_name))
-        alert_id = c.lastrowid
-        conn.commit()
-        conn.close()
+        try:
+            c = conn.cursor()
+            c.execute("INSERT INTO sos_alerts (lat, lng, timestamp, status, user_name) VALUES (?, ?, ?, 'PENDING', ?)",
+                      (lat, lng, current_time, user_name))
+            alert_id = c.lastrowid
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
         # Enhanced logging
         print(f"\n{'='*50}")
@@ -1280,7 +1284,7 @@ def get_routes():
         
         directions_url = "https://maps.googleapis.com/maps/api/directions/json"
         params = {"origin": source, "destination": destination, "alternatives": "true", "key": API_KEY}
-        response = requests.get(directions_url, params=params).json()
+        response = requests.get(directions_url, params=params, timeout=15).json()
         
         print(f"🗺️ Google Directions API Response:")
         print(f"   Status: {response.get('status')}")
@@ -1579,12 +1583,17 @@ def post_feedback():
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
        
         conn = sqlite3.connect('saferoute.db')
-        c = conn.cursor()
-        c.execute("INSERT INTO route_feedback (lat, lng, type, description, route_polyline, timestamp, user_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                  (lat, lng, ftype, desc, polyline_str, current_time, user_name))
-        feedback_id = c.lastrowid
-        conn.commit()
-        conn.close()
+        try:
+            c = conn.cursor()
+            c.execute("INSERT INTO route_feedback (lat, lng, type, description, route_polyline, timestamp, user_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                      (lat, lng, ftype, desc, polyline_str, current_time, user_name))
+            feedback_id = c.lastrowid
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
        
         feedback_data = {
             'id': feedback_id,
@@ -1779,7 +1788,7 @@ def ai_status():
         status_info = {
             "groq_available": GROQ_AVAILABLE,
             "groq_configured": groq_client is not None,
-            "groq_api_key_preview": f"{GROQ_API_KEY[:10]}...{GROQ_API_KEY[-4:]}" if GROQ_API_KEY else None,
+            "groq_api_key_configured": bool(GROQ_API_KEY),
             "google_places_available": bool(API_KEY),
             "primary_ai": "Google Places API (New)" if API_KEY else "Groq" if groq_client else "Generic Fallback"
         }
