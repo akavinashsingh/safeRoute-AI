@@ -22,25 +22,43 @@ SafeRoute is an intelligent navigation system that prioritizes user safety by an
 ## 🌟 Features
 
 ### 🤖 AI-Powered Safety Analysis
-- **Multi-AI Provider Support**: Groq AI + Google Gemini for comprehensive analysis
+- **Multi-AI Provider Support**: Groq AI (llama-3.3-70b-versatile) for comprehensive analysis
 - **Smart Route Scoring**: AI evaluates routes based on crime incidents, lighting, and emergency services
 - **Real-time Risk Assessment**: Dynamic safety scores using multiple data sources
-- **Emergency Service Integration**: Google Places API integration for real hospital/police locations
+- **Emergency Service Integration**: Google Places API integration for real hospital/police/petrol/hotel locations
+- **Evenly Distributed POI Markers**: Hospitals, police stations, petrol pumps, and hotels are spatially distributed along each route using position-band sampling — not clustered at start/end
+
+### 🧠 AI Route Intelligence (New)
+- **AI Safety Explainer**: One-click Groq AI analysis of any route explaining why it is safe or risky in plain language (3–4 sentences)
+- **AI Route Narrator**: Text-to-speech narration of your selected route with turn-by-turn safety briefing; uses Groq for a personalized briefing, falls back to browser Speech Synthesis
+- **Predictive Safety Score**: Bar chart showing safety forecasts for 7AM / 2PM / 8PM / 11PM with a "NOW" badge on the current time slot — powered by time-of-day + day-of-week scoring with optional Groq AI insight
+
+### 🔥 Danger Heatmap (New)
+- **Crime Heatmap Overlay**: Toggle a live danger heatmap built from community reports and SOS alerts directly on the map
+- **Color-Coded Intensity**: Yellow → Orange → Red → Deep Red gradient representing danger density
+- **Auto-Refresh**: Heatmap updates automatically when new community reports are submitted
 
 ### 🚨 Emergency Response System
-- **SOS Alert Broadcasting**: Instant emergency alerts to admin dashboard
-- **Multi-AI Emergency Assistant**: Groq + Gemini AI provide nearby emergency services and safety tips
-- **Live Location Sharing**: Real-time GPS tracking for emergency situations
+- **SOS Alert Broadcasting**: Instant emergency alerts to admin dashboard via Socket.IO
+- **Countdown SOS with Cancel**: 5-second confirmation window prevents accidental triggers
+- **AI Emergency Assistant**: Groq AI provides nearby emergency services and personalized safety tips on SOS trigger
+- **Live Location Sharing**: Real-time GPS tracking with current address shown on map
+
+### 📍 Location Awareness (New)
+- **Current Location Marker**: Animated blue drop-pin shows your detected location on the map with address in an info popup
+- **Locate Me Button**: Instantly fills the source field with your current location for route planning
 
 ### 👥 Community Safety Network
-- **Crowd-sourced Reports**: Users can report incidents, suspicious activities, and hazards
+- **Crowd-sourced Reports**: Users can report accidents, suspicious activity, harassment, theft, traffic, and road damage
 - **Real-time Incident Mapping**: Live visualization of community-reported safety concerns
-- **Collaborative Safety**: Community-driven approach to route safety
+- **Heatmap Integration**: Community reports directly feed the danger heatmap
 
 ### 📱 User Experience
-- **Interactive Safety Dashboard**: Visual route comparison with safety metrics
-- **Night Mode Support**: Enhanced visibility for different lighting conditions
-- **Mobile-Responsive Design**: Optimized for all devices and screen sizes
+- **Interactive Safety Dashboard**: Visual route comparison with safety scores, distance, duration, and AI features per route
+- **Safety-Color-Coded Routes**: Green / Amber / Red polylines on map based on safety score
+- **Night Mode Support**: Full dark mode for comfortable night navigation
+- **Mobile-Responsive Design**: Hamburger navigation and sidebar overlay for all screen sizes
+- **Personalized Experience**: Name capture on first visit used in SOS alerts and AI narration
 
 ## 🏗️ Architecture
 
@@ -114,9 +132,43 @@ Content-Type: application/json
 
 {
   "source": "Starting Location",
-  "destination": "Destination Location"
+  "destination": "Destination Location",
+  "frontend_routes": [{ "polyline": "<encoded_polyline>" }]
 }
 ```
+
+### AI Safety Explainer
+```http
+POST /explain-route
+Content-Type: application/json
+
+{
+  "route": { "safety_score": 82, "distance": "12.3 km", ... }
+}
+```
+
+### AI Route Narrator
+```http
+POST /narrate-route
+Content-Type: application/json
+
+{
+  "route": { ... },
+  "route_num": 1,
+  "user_name": "Priya"
+}
+```
+
+### Predictive Safety Score
+```http
+POST /predict-safety
+Content-Type: application/json
+
+{
+  "route": { "safety_score": 82, ... }
+}
+```
+Returns scores for 7AM / 2PM / 8PM / 11PM slots with optional Groq AI one-line insight.
 
 ### Emergency Alerts
 ```http
@@ -125,7 +177,8 @@ Content-Type: application/json
 
 {
   "lat": 17.3850,
-  "lng": 78.4867
+  "lng": 78.4867,
+  "user_name": "Priya"
 }
 ```
 
@@ -144,26 +197,21 @@ Content-Type: application/json
 
 ## 🤖 AI Integration
 
-### Multi-AI Provider Support
-SafeRoute supports multiple AI providers for enhanced reliability and performance:
-
-### Groq AI Assistant
-- **Model**: Llama-3.1-8b-instant
-- **Strengths**: Ultra-fast inference, unlimited usage
-- **Purpose**: Emergency service recommendations and safety tips
-- **Speed**: ~100ms response time
-
-### Google Gemini AI
-- **Model**: Gemini-1.5-flash / Gemini-1.5-pro
-- **Strengths**: Advanced reasoning, multimodal capabilities
-- **Purpose**: Complex safety analysis and contextual recommendations
-- **Features**: Image analysis for route conditions
+### Groq AI — Core Intelligence
+- **Model**: `llama-3.3-70b-versatile`
+- **Use Cases**:
+  - Route safety explanation (3–4 sentence human-readable analysis)
+  - Voice narration script generation (time-of-day aware)
+  - Predictive safety one-line insight per route
+  - Emergency SOS AI assistant (nearest hospitals, police, actionable advice)
+- **Speed**: ~500ms average response
+- **Fallback**: All AI features have client-side fallbacks — app is fully functional without Groq
 
 ### Fallback System
-1. **Primary**: Groq AI (fastest response)
-2. **Secondary**: Google Gemini (advanced analysis)
-3. **Tertiary**: Google Places API (real location data)
-4. **Fallback**: Generic emergency suggestions
+1. **Primary**: Groq AI (`llama-3.3-70b-versatile`)
+2. **Secondary**: Google Places API (real location data for POI markers)
+3. **Tertiary**: Client-side calculation (safety scores, narration text, forecast bars)
+4. **Final**: Generic emergency suggestions with helpline numbers
 
 ## 🎯 Safety Scoring Algorithm
 
@@ -188,6 +236,19 @@ SafeRoute calculates safety scores using multiple factors:
    - Real-time incident reports
    - User-generated safety alerts
    - Crowd-sourced hazard mapping
+
+### 🔮 Predictive Safety Scoring (New)
+
+Time-of-day and day-of-week adjustments applied to base score:
+
+| Time Slot | Modifier |
+|-----------|----------|
+| 7 AM | +8 (morning commute, safer) |
+| 2 PM | +5 (daytime, peak safety) |
+| 8 PM | −10 (evening, higher risk) |
+| 11 PM | −20 (night, highest risk) |
+
+Weekend penalty: −3 points. Groq AI adds a one-sentence contextual insight per forecast.
 
 ## 🌐 Deployment
 
@@ -214,14 +275,16 @@ python backend/app.py
 - **Flask**: Web framework with CORS support
 - **Flask-SocketIO**: Real-time WebSocket communication
 - **SQLite**: Lightweight database for alerts and feedback
-- **Multi-AI Integration**: Groq AI + Google Gemini for intelligent analysis
-- **Google Places API**: Real-world location data
+- **Groq AI SDK**: `llama-3.3-70b-versatile` for route explanation, narration, and prediction
+- **Google Directions API**: Multi-route planning with polyline encoding
+- **Google Places API (New)**: Real hospital, police, petrol pump, and hotel locations along routes
 
 ### Frontend
 - **Vanilla JavaScript**: No framework dependencies
-- **Google Maps JavaScript API**: Interactive mapping
-- **Socket.IO Client**: Real-time updates
-- **Modern CSS**: Responsive design with dark mode
+- **Google Maps JavaScript API**: Interactive mapping with HeatmapLayer, DirectionsRenderer, custom SVG markers
+- **Web Speech Synthesis API**: Browser-native TTS for route narration
+- **Socket.IO Client**: Real-time SOS and community report updates
+- **Modern CSS**: Responsive design with dark mode, animated route cards, forecast bars
 
 ### Deployment
 - **Render.com**: Primary hosting platform
@@ -292,15 +355,27 @@ This project is open source and available under the [MIT License](LICENSE).
 **Team**: Thrivers  
 
 ### Hackathon Achievements
-- ✅ Multi-AI powered safety analysis (Groq + Gemini)
-- ✅ Real-time emergency response system
-- ✅ Community-driven safety network
-- ✅ Mobile-responsive design
-- ✅ Production-ready deployment
+- ✅ AI-powered safety analysis with Groq (llama-3.3-70b-versatile)
+- ✅ AI Safety Explainer — plain-language route risk analysis
+- ✅ AI Route Narrator — voice narration with Groq + Speech Synthesis fallback
+- ✅ Predictive Safety Score — time-of-day forecast with bar chart UI
+- ✅ Danger Heatmap Overlay — community-fed live crime heatmap
+- ✅ Real-time SOS emergency response system
+- ✅ Evenly distributed POI markers (hospitals, police, petrol, hotels) along routes
+- ✅ Safety-color-coded route polylines (Green / Amber / Red)
+- ✅ Live user location marker with animated drop-pin
+- ✅ Community-driven safety network with real-time Socket.IO updates
+- ✅ Mobile-responsive design with hamburger navigation
+- ✅ Production-ready deployment on Render.com
 
 ## 🔮 Future Enhancements
 
-- [ ] Machine learning model for predictive safety analysis
+- [ ] Fake incoming call feature for discreet SOS escape
+- [ ] Shake-to-SOS via device motion sensor
+- [ ] Trusted contacts auto-alert via WhatsApp/SMS deep links
+- [ ] Journey Guard Mode — auto-SOS if user doesn't check in by ETA
+- [ ] Live SOS tracking shareable link for trusted contacts
+- [ ] Machine learning model for predictive safety analysis using real crime datasets
 - [ ] Integration with local law enforcement APIs
 - [ ] Wearable device compatibility (smartwatch alerts)
 - [ ] Multi-language support for global accessibility
