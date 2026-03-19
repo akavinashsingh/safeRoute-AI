@@ -1602,6 +1602,97 @@ Rules:
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/predict-safety", methods=["POST", "OPTIONS"])
+def predict_safety():
+    """Return time-adjusted safety scores for morning/evening/night + Groq insight"""
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+    try:
+        data  = request.json or {}
+        route = data.get("route", {})
+        route_num = data.get("route_index", 0) + 1
+
+        base_score  = route.get("safety_score", 50)
+        lights      = route.get("street_light_score", 50)
+        police      = route.get("police_count", 0)
+        crime_score = route.get("crime_score", 50)
+        hospitals   = route.get("hospital_count", 0)
+
+        now   = datetime.now()
+        hour  = now.hour
+        dow   = now.weekday()   # 0=Mon … 6=Sun
+        is_weekend = dow >= 5
+
+        def adjust(h):
+            adj = 0
+            if h >= 23 or h < 5:       # Deep night
+                adj -= 18
+                if lights < 40: adj -= 12
+                if police == 0: adj -= 8
+                if is_weekend:  adj -= 6
+            elif h >= 20:              # Late evening
+                adj -= 10
+                if lights < 55: adj -= 5
+                if is_weekend:  adj -= 4
+            elif h >= 18:              # Evening
+                adj -= 5
+                if lights < 60: adj -= 3
+            elif h in range(7, 10) or h in range(17, 20):  # Rush hour
+                adj -= 4
+                if crime_score > 60: adj -= 3
+            elif h in range(9, 17):   # Daytime
+                adj += 6
+                if hospitals > 0: adj += 2
+            elif h in range(5, 7):    # Early morning
+                adj -= 3
+            return max(5, min(100, round(base_score + adj)))
+
+        slots = [
+            {"label": "7 AM",  "hour": 7,  "score": adjust(7)},
+            {"label": "2 PM",  "hour": 14, "score": adjust(14)},
+            {"label": "8 PM",  "hour": 20, "score": adjust(20)},
+            {"label": "11 PM", "hour": 23, "score": adjust(23)},
+        ]
+        current_score = adjust(hour)
+
+        # Groq insight (optional — skipped if unavailable)
+        insight = None
+        if groq_client:
+            try:
+                worst   = min(slots, key=lambda s: s["score"])
+                best    = max(slots, key=lambda s: s["score"])
+                prompt  = (
+                    f"Route {route_num} has a base safety score of {base_score}/100. "
+                    f"Right now ({now.strftime('%I %p')}) it scores {current_score}. "
+                    f"Best time: {best['label']} ({best['score']}). "
+                    f"Worst time: {worst['label']} ({worst['score']}). "
+                    f"Street lighting: {lights}%, Police stations: {police}, Crime index: {crime_score}/100. "
+                    f"Write ONE sentence explaining the biggest time-based risk factor for this route. Plain text only."
+                )
+                r = groq_client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="llama-3.3-70b-versatile",
+                    temperature=0.3, max_tokens=80
+                )
+                insight = r.choices[0].message.content.strip()
+            except Exception:
+                pass
+
+        return jsonify({
+            "status": "success",
+            "current_score": current_score,
+            "current_hour": hour,
+            "slots": slots,
+            "insight": insight
+        })
+
+    except Exception as e:
+        print(f"Predict Safety Error: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/narrate-route", methods=["POST", "OPTIONS"])
 def narrate_route():
     """Generate a spoken safety briefing for the selected route using Groq AI"""

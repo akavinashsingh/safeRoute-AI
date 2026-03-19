@@ -298,6 +298,9 @@ function displayRouteCards(routes) {
           <span class="badge"><i class="fa-solid fa-user-shield"></i> ${route.police_count || 0} Police Stn</span>
           <span class="badge"><i class="fa-solid fa-lightbulb"></i> ${route.street_light_score || 0}% Lights</span>
         </div>
+        <div class="safety-forecast" id="forecast-${index}">
+          <div class="forecast-loading"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading forecast...</div>
+        </div>
         <div class="ai-btn-row">
           <button class="ai-explain-btn" onclick="explainRoute(event, ${index})">
             <i class="fa-solid fa-robot"></i> Ask AI Why
@@ -316,6 +319,8 @@ function displayRouteCards(routes) {
   });
   
   console.log(`✅ All ${routes.length} route cards displayed with safety colors`);
+  // Auto-load predictive forecast for each card
+  routes.forEach((_, i) => loadForecast(i));
 }
 
 window.selectRoute = function (index) {
@@ -390,6 +395,89 @@ window.explainRoute = async function(event, index) {
     btn.classList.remove('loading');
   }
 };
+
+/* --- Predictive Safety Forecast --- */
+function getSafetyColorHex(score) {
+  if (score >= 75) return '#16a34a';
+  if (score >= 60) return '#d97706';
+  return '#dc2626';
+}
+
+async function loadForecast(index) {
+  const panel = document.getElementById(`forecast-${index}`);
+  const route = currentRoutes[index];
+  if (!panel || !route) return;
+
+  try {
+    const res  = await fetch(`${window.BACKEND_URL}/predict-safety`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ route_index: index, route })
+    });
+    const data = await res.json();
+    if (!data.slots) throw new Error('no data');
+
+    const currentHour = data.current_hour;
+    const nowScore    = data.current_score;
+
+    const slotsHTML = data.slots.map(slot => {
+      const isNow   = Math.abs(slot.hour - currentHour) <= 2;
+      const color   = getSafetyColorHex(slot.score);
+      const nowBadge = isNow ? '<span class="fc-now-badge">NOW</span>' : '';
+      return `
+        <div class="fc-slot ${isNow ? 'fc-slot-now' : ''}">
+          ${nowBadge}
+          <span class="fc-time">${slot.label}</span>
+          <div class="fc-bar-wrap">
+            <div class="fc-bar" style="width:${slot.score}%;background:${color}"></div>
+          </div>
+          <span class="fc-score" style="color:${color}">${slot.score}</span>
+        </div>`;
+    }).join('');
+
+    const insightHTML = data.insight
+      ? `<div class="fc-insight"><i class="fa-solid fa-robot"></i> ${data.insight}</div>`
+      : '';
+
+    panel.innerHTML = `
+      <div class="fc-header"><i class="fa-solid fa-chart-line"></i> Safety Forecast</div>
+      ${slotsHTML}
+      ${insightHTML}`;
+
+  } catch {
+    // Fallback: compute client-side without backend
+    const route   = currentRoutes[index];
+    const base    = route.safety_score || 50;
+    const lights  = route.street_light_score || 50;
+    const police  = route.police_count || 0;
+    const now     = new Date().getHours();
+
+    const localAdjust = h => {
+      let adj = 0;
+      if (h >= 23 || h < 5)  { adj -= 18; if (lights < 40) adj -= 10; if (!police) adj -= 8; }
+      else if (h >= 20)      { adj -= 10; if (lights < 55) adj -= 5; }
+      else if (h >= 18)      { adj -= 5; }
+      else if ((h>=7&&h<10)||(h>=17&&h<20)) { adj -= 4; }
+      else if (h >= 9)       { adj += 6; }
+      return Math.max(5, Math.min(100, Math.round(base + adj)));
+    };
+
+    const slots = [{label:'7 AM',hour:7},{label:'2 PM',hour:14},{label:'8 PM',hour:20},{label:'11 PM',hour:23}];
+    const slotsHTML = slots.map(s => {
+      const sc = localAdjust(s.hour);
+      const isNow = Math.abs(s.hour - now) <= 2;
+      const color = getSafetyColorHex(sc);
+      return `<div class="fc-slot ${isNow?'fc-slot-now':''}">
+        ${isNow?'<span class="fc-now-badge">NOW</span>':''}
+        <span class="fc-time">${s.label}</span>
+        <div class="fc-bar-wrap"><div class="fc-bar" style="width:${sc}%;background:${color}"></div></div>
+        <span class="fc-score" style="color:${color}">${sc}</span>
+      </div>`;
+    }).join('');
+
+    panel.innerHTML = `<div class="fc-header"><i class="fa-solid fa-chart-line"></i> Safety Forecast</div>${slotsHTML}`;
+  }
+}
 
 /* --- AI Route Narrator --- */
 let narratingIndex = null;

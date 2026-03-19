@@ -188,6 +188,44 @@ body.night-mode .route-card.selected { background: #064e3b; border-color: #34d39
 }
 body.night-mode .badge { background: #334155; border-color: #475569; color: #cbd5e1; }
 
+/* --- Predictive Safety Forecast --- */
+.safety-forecast {
+    margin-top: 10px; padding: 10px 12px;
+    background: var(--bg-light); border-radius: 10px;
+    border: 1px solid var(--border); font-size: 0.78rem;
+}
+body.night-mode .safety-forecast { background: #0f172a; border-color: #334155; }
+
+.forecast-loading { color: var(--text-light); font-size: 0.75rem; text-align: center; padding: 4px 0; }
+
+.fc-header {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--text-light); margin-bottom: 8px;
+    display: flex; align-items: center; gap: 5px;
+}
+.fc-slot {
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 5px; position: relative;
+}
+.fc-slot-now { background: rgba(16,185,129,0.07); border-radius: 6px; padding: 2px 4px; margin: 0 -4px 5px; }
+body.night-mode .fc-slot-now { background: rgba(16,185,129,0.12); }
+
+.fc-now-badge {
+    font-size: 0.55rem; font-weight: 800; background: #10b981; color: white;
+    padding: 1px 5px; border-radius: 4px; letter-spacing: 0.04em;
+}
+.fc-time { width: 34px; font-weight: 600; color: var(--text-light); flex-shrink: 0; font-size: 0.72rem; }
+.fc-bar-wrap { flex: 1; height: 7px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.fc-bar { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+.fc-score { width: 26px; text-align: right; font-weight: 800; font-size: 0.78rem; flex-shrink: 0; }
+
+.fc-insight {
+    margin-top: 8px; padding: 6px 8px; font-size: 0.72rem; line-height: 1.4;
+    color: var(--text-light); border-top: 1px solid var(--border);
+    display: flex; gap: 5px; align-items: flex-start;
+}
+.fc-insight i { color: #0ba471; flex-shrink: 0; margin-top: 2px; }
+
 /* --- AI Safety Explainer --- */
 .ai-btn-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
