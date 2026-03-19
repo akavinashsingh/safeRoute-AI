@@ -1362,33 +1362,21 @@ def get_routes():
                         area_type = "Residential" 
                         route_name = "Alternative Route (Residential Area)"
                     
-                    # Generate synthetic route data with modified polyline
+                    # Synthetic routes reuse the real route's polyline exactly.
+                    # Offsetting points causes off-road zigzags on sparse overview polylines.
                     base_polyline = base_route['polyline']
-                    base_points = polyline.decode(base_polyline)
-                    
-                    # Create a slightly modified polyline for synthetic routes
-                    modified_points = []
-                    for j, (lat, lng) in enumerate(base_points):
-                        # Add small random variations to create a different route path
-                        if j % 5 == 0:  # Modify every 5th point to create route variation
-                            lat_offset = random.uniform(-0.001, 0.001)  # ~100m variation
-                            lng_offset = random.uniform(-0.001, 0.001)
-                            modified_points.append((lat + lat_offset, lng + lng_offset))
-                        else:
-                            modified_points.append((lat, lng))
-                    
-                    synthetic_polyline = polyline.encode(modified_points)
-                    
+                    base_points   = polyline.decode(base_polyline)
+
                     synthetic_route = {
-                        "distance": f"{base_route['distance_meters'] * random.uniform(1.1, 1.3) / 1000:.1f} km",
-                        "duration": f"{int(base_route['duration_seconds'] * random.uniform(1.2, 1.4) / 60)} mins",
-                        "distance_meters": int(base_route['distance_meters'] * random.uniform(1.1, 1.3)),
-                        "duration_seconds": int(base_route['duration_seconds'] * random.uniform(1.2, 1.4)),
-                        "polyline": synthetic_polyline,  # ✅ Use modified polyline
+                        "distance": f"{base_route['distance_meters'] * random.uniform(1.05, 1.2) / 1000:.1f} km",
+                        "duration": f"{int(base_route['duration_seconds'] * random.uniform(1.1, 1.3) / 60)} mins",
+                        "distance_meters": int(base_route['distance_meters'] * random.uniform(1.05, 1.2)),
+                        "duration_seconds": int(base_route['duration_seconds'] * random.uniform(1.1, 1.3)),
+                        "polyline": base_polyline,   # same road, different safety profile
                         "hospital_count": random.randint(0, 2),
                         "police_count": random.randint(0, 1),
                         "crime_incidents": generate_realistic_crime_incidents(
-                            modified_points, area_type  # Use modified points
+                            base_points, area_type
                         ),
                         "hospital_locations": [],
                         "police_locations": [],
