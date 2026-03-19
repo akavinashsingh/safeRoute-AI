@@ -1614,6 +1614,88 @@ Rules:
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/narrate-route", methods=["POST", "OPTIONS"])
+def narrate_route():
+    """Generate a spoken safety briefing for the selected route using Groq AI"""
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+    if not groq_client:
+        return jsonify({"error": "Groq AI not available"}), 503
+
+    try:
+        data       = request.json or {}
+        route      = data.get("route", {})
+        route_num  = data.get("route_index", 0) + 1
+        hour       = datetime.now().hour
+
+        if hour < 6:    time_ctx = "late night"
+        elif hour < 12: time_ctx = "morning"
+        elif hour < 17: time_ctx = "afternoon"
+        elif hour < 21: time_ctx = "evening"
+        else:           time_ctx = "night"
+
+        safety_score   = route.get("safety_score", 0)
+        hospital_count = route.get("hospital_count", 0)
+        police_count   = route.get("police_count", 0)
+        light_score    = route.get("street_light_score", 0)
+        crime_score    = route.get("crime_score", 0)
+        distance       = route.get("distance", "unknown")
+        duration       = route.get("duration", "unknown")
+        warnings       = route.get("warnings", [])
+        incidents      = route.get("crime_incidents", [])
+
+        incident_types = {}
+        for inc in incidents:
+            t = inc.get("type", "incident")
+            incident_types[t] = incident_types.get(t, 0) + 1
+        incident_summary = ", ".join([f"{v} {k} report{'s' if v > 1 else ''}"
+                                      for k, v in incident_types.items()]) or "no reported incidents"
+
+        prompt = f"""You are SafeRoute AI, a personal safety navigator. Generate a spoken route briefing for Route {route_num}.
+
+Route data:
+- Safety score: {safety_score} out of 100
+- Distance: {distance}, Duration: {duration}
+- Hospitals along route: {hospital_count}
+- Police stations along route: {police_count}
+- Street lighting quality: {light_score} percent
+- Crime risk index: {crime_score} out of 100
+- Reported incidents: {incident_summary}
+- Current time: {time_ctx}
+- Key warnings: {'; '.join(warnings[:3]) if warnings else 'none'}
+
+Write a natural, spoken 4-5 sentence safety briefing. Rules:
+- Start with "Route {route_num} is..." and a clear safety verdict
+- Mention hospitals and police count naturally
+- Call out the biggest risk factor specifically
+- Give one time-aware tip based on it being {time_ctx}
+- End with an encouraging closing line
+- No bullet points, no markdown, no special characters
+- Write exactly as it should be spoken aloud — natural, calm, confident
+- Numbers should be spelled naturally (say "two hospitals" not "2")"""
+
+        response = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are SafeRoute AI, a calm and confident safety navigation assistant. Speak naturally as if talking to a friend."},
+                {"role": "user", "content": prompt}
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.5,
+            max_tokens=250
+        )
+
+        narration = response.choices[0].message.content.strip()
+        print(f"🎙️ Route Narrator: Route {route_num} ({len(narration)} chars)")
+
+        return jsonify({"status": "success", "narration": narration, "route_index": route_num - 1})
+
+    except Exception as e:
+        print(f"Narrate Route Error: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/post-feedback", methods=["POST", "OPTIONS"])
 def post_feedback():
     # Handle CORS preflight

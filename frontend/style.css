@@ -189,16 +189,30 @@ body.night-mode .route-card.selected { background: #064e3b; border-color: #34d39
 body.night-mode .badge { background: #334155; border-color: #475569; color: #cbd5e1; }
 
 /* --- AI Safety Explainer --- */
-.ai-explain-btn {
+.ai-btn-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+.ai-explain-btn, .ai-narrate-btn {
     display: flex; align-items: center; gap: 5px;
-    margin-top: 10px; padding: 5px 12px; border-radius: 20px;
-    border: 1.5px solid var(--accent); background: transparent;
-    color: var(--accent); font-size: 0.75rem; font-weight: 700;
+    padding: 5px 12px; border-radius: 20px;
+    font-size: 0.75rem; font-weight: 700;
     cursor: pointer; transition: all 0.2s; width: fit-content;
+    border: 1.5px solid var(--accent);
 }
+.ai-explain-btn { background: transparent; color: var(--accent); }
 .ai-explain-btn:hover { background: var(--accent); color: white; }
 .ai-explain-btn.loading { opacity: 0.6; pointer-events: none; }
-.ai-explain-btn i { font-size: 0.7rem; }
+
+.ai-narrate-btn { background: transparent; color: #7c3aed; border-color: #7c3aed; }
+.ai-narrate-btn:hover { background: #7c3aed; color: white; }
+.ai-narrate-btn.speaking {
+    background: #7c3aed; color: white;
+    animation: pulse-narrate 1.2s infinite;
+}
+@keyframes pulse-narrate {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(124,58,237,0.5); }
+    50%       { box-shadow: 0 0 0 6px rgba(124,58,237,0); }
+}
+.ai-explain-btn i, .ai-narrate-btn i { font-size: 0.7rem; }
 
 .ai-explanation-panel {
     display: none; margin-top: 10px; padding: 12px 14px;

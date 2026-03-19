@@ -216,7 +216,7 @@ function sendToBackendForAnalysis(source, destination) {
   // analyses the same polylines — no separate Directions call, no index mismatch.
   const frontendRoutes = (lastDirectionsResult && lastDirectionsResult.routes || []).map((r, i) => ({
     index: i,
-    polyline: r.overview_polyline.points,
+    polyline: r.overview_polyline,        // JS API: already a string, not .points
     distance_text: r.legs[0].distance.text,
     distance_meters: r.legs[0].distance.value,
     duration_text: r.legs[0].duration.text,
@@ -298,9 +298,14 @@ function displayRouteCards(routes) {
           <span class="badge"><i class="fa-solid fa-user-shield"></i> ${route.police_count || 0} Police Stn</span>
           <span class="badge"><i class="fa-solid fa-lightbulb"></i> ${route.street_light_score || 0}% Lights</span>
         </div>
-        <button class="ai-explain-btn" onclick="explainRoute(event, ${index})">
-          <i class="fa-solid fa-robot"></i> Ask AI Why
-        </button>
+        <div class="ai-btn-row">
+          <button class="ai-explain-btn" onclick="explainRoute(event, ${index})">
+            <i class="fa-solid fa-robot"></i> Ask AI Why
+          </button>
+          <button class="ai-narrate-btn" id="narrate-btn-${index}" onclick="narrateRoute(event, ${index})">
+            <i class="fa-solid fa-volume-high"></i> Narrate
+          </button>
+        </div>
         <div class="ai-explanation-panel" id="ai-panel-${index}">
           <div class="ai-header"><i class="fa-solid fa-robot"></i> SafeRoute AI</div>
           <div id="ai-text-${index}"></div>
@@ -383,6 +388,131 @@ window.explainRoute = async function(event, index) {
     console.error('AI Explain Error:', err);
   } finally {
     btn.classList.remove('loading');
+  }
+};
+
+/* --- AI Route Narrator --- */
+let narratingIndex = null;
+
+// Fallback: build narration text locally from route data (no Groq needed)
+function buildLocalNarration(route, routeNum) {
+  const score     = route.safety_score || 0;
+  const hospitals = route.hospital_count || 0;
+  const police    = route.police_count   || 0;
+  const lights    = route.street_light_score || 0;
+  const distance  = route.distance || '';
+  const duration  = route.duration || '';
+  const incidents = route.crime_incidents || [];
+
+  const toWords = n => ['zero','one','two','three','four','five','six','seven','eight','nine','ten'][n] ?? String(n);
+
+  const verdict = score >= 75 ? 'your safest option'
+                : score >= 60 ? 'a moderately safe route'
+                : 'a high-risk route — use caution';
+
+  const hospText   = hospitals === 0 ? 'no hospitals' : `${toWords(hospitals)} hospital${hospitals > 1 ? 's' : ''}`;
+  const policeText = police    === 0 ? 'no police stations' : `${toWords(police)} police station${police > 1 ? 's' : ''}`;
+
+  const lightDesc  = lights >= 70 ? 'well lit' : lights >= 45 ? 'moderately lit' : 'poorly lit';
+
+  const incidentTypes = [...new Set(incidents.map(i => i.type))].slice(0, 2);
+  const incidentText  = incidentTypes.length
+    ? `Watch out for reported ${incidentTypes.join(' and ')} incidents along the way.`
+    : 'No major incidents have been reported on this route.';
+
+  const hour = new Date().getHours();
+  const timeTip = hour >= 21 || hour < 6
+    ? 'It is late at night — stay on main roads and share your location with someone you trust.'
+    : hour >= 18
+    ? 'It is evening — prefer well-lit stretches and stay aware of your surroundings.'
+    : 'Travel conditions are good for this time of day.';
+
+  return `Route ${routeNum} is ${verdict}, with a safety score of ${score} out of 100. `
+       + `The route is ${distance} and takes approximately ${duration}. `
+       + `You will pass ${hospText} and ${policeText}, and the streets are ${lightDesc}. `
+       + `${incidentText} `
+       + `${timeTip} Stay safe and have a good journey.`;
+}
+
+// Load voices reliably (getVoices() is async on first call)
+function getEnglishVoice() {
+  return new Promise(resolve => {
+    const pick = list => list.find(v =>
+      v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Zira') || v.name.includes('David') || v.name.includes('Natural'))
+    ) || list.find(v => v.lang.startsWith('en')) || null;
+
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length) { resolve(pick(voices)); return; }
+    window.speechSynthesis.onvoiceschanged = () => resolve(pick(window.speechSynthesis.getVoices()));
+    setTimeout(() => resolve(null), 2000); // safety timeout
+  });
+}
+
+function resetNarrateBtn(index) {
+  const btn = document.getElementById(`narrate-btn-${index}`);
+  if (btn) { btn.innerHTML = '<i class="fa-solid fa-volume-high"></i> Narrate'; btn.classList.remove('speaking'); }
+  narratingIndex = null;
+}
+
+function speakText(text, index) {
+  const btn = document.getElementById(`narrate-btn-${index}`);
+  getEnglishVoice().then(voice => {
+    const utter    = new SpeechSynthesisUtterance(text);
+    utter.rate     = 0.93;
+    utter.pitch    = 1.0;
+    utter.volume   = 1.0;
+    if (voice) utter.voice = voice;
+    utter.onend    = () => resetNarrateBtn(index);
+    utter.onerror  = () => resetNarrateBtn(index);
+    if (btn) btn.innerHTML = '<i class="fa-solid fa-stop"></i> Stop';
+    window.speechSynthesis.speak(utter);
+  });
+}
+
+window.narrateRoute = async function(event, index) {
+  event.stopPropagation();
+
+  const btn   = document.getElementById(`narrate-btn-${index}`);
+  const route = currentRoutes[index];
+  if (!route || !btn) return;
+
+  // Toggle off if already speaking this route
+  if (narratingIndex === index && window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+    resetNarrateBtn(index);
+    return;
+  }
+
+  // Stop any other narration
+  window.speechSynthesis.cancel();
+  document.querySelectorAll('.ai-narrate-btn').forEach(b => {
+    b.innerHTML = '<i class="fa-solid fa-volume-high"></i> Narrate';
+    b.classList.remove('speaking');
+  });
+
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading...';
+  btn.classList.add('speaking');
+  narratingIndex = index;
+
+  try {
+    const res  = await fetch(`${window.BACKEND_URL}/narrate-route`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ route_index: index, route })
+    });
+    const data = await res.json();
+
+    if (data.narration) {
+      speakText(data.narration, index);
+    } else {
+      // Groq unavailable — use local fallback instantly
+      console.log('🔊 Groq unavailable, using local narration');
+      speakText(buildLocalNarration(route, index + 1), index);
+    }
+  } catch (err) {
+    // Network/backend error — still narrate locally
+    console.log('🔊 Backend unreachable, using local narration');
+    speakText(buildLocalNarration(route, index + 1), index);
   }
 };
 
