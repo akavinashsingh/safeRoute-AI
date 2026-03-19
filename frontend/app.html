@@ -90,6 +90,23 @@
 
         <main class="map-wrapper">
             <div id="map"></div>
+            <!-- Heatmap toggle floating button -->
+            <div class="map-fab-group">
+                <button id="heatmap-toggle-btn" class="map-fab" onclick="toggleHeatmap()" title="Toggle Danger Heatmap">
+                    <i class="fa-solid fa-fire"></i>
+                    <span>Heatmap</span>
+                </button>
+            </div>
+            <!-- Heatmap legend (shown when active) -->
+            <div id="heatmap-legend" class="heatmap-legend hidden">
+                <div class="legend-title"><i class="fa-solid fa-fire"></i> Danger Heatmap</div>
+                <div class="legend-scale">
+                    <span class="legend-low">Low</span>
+                    <div class="legend-bar"></div>
+                    <span class="legend-high">High</span>
+                </div>
+                <div class="legend-note">Based on crime reports &amp; community feedback</div>
+            </div>
         </main>
     </div>
 

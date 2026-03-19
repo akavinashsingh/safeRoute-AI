@@ -286,9 +286,9 @@ def get_places_along_route(route_points, place_type="hospital", max_results=10):
                 cumulative_distances.append(total_distance_km)
             
             # Determine number of samples based on route length
-            # Sample every 4-5km to ensure full coverage with overlapping search radii (3km)
-            target_sample_interval_km = 4.5  # Sample every 4.5km (with 3km radius = 1.5km overlap)
-            num_samples = max(3, min(8, int(total_distance_km / target_sample_interval_km) + 1))
+            # Sample every 2.5km so 5km radius searches overlap heavily — no gaps in coverage
+            target_sample_interval_km = 2.5
+            num_samples = max(5, min(12, int(total_distance_km / target_sample_interval_km) + 1))
             
             print(f"   📏 Route distance: {total_distance_km:.2f} km, will use {num_samples} evenly distributed search points")
             
@@ -333,8 +333,8 @@ def get_places_along_route(route_points, place_type="hospital", max_results=10):
         all_places = []
         seen_places = set()  # To deduplicate by coordinates
         
-        # Search radius in meters (3km for better coverage)
-        search_radius = 3000.0
+        # 5km radius — wide enough to catch hospitals/police slightly off the route path
+        search_radius = 5000.0
         
         # Use all sample points (they're already limited and evenly distributed)
         # No need to truncate further
@@ -370,9 +370,8 @@ def get_places_along_route(route_points, place_type="hospital", max_results=10):
                             if not place_lat or not place_lng:
                                 continue
                             
-                            # Improved deduplication: Check if this place is too close to any existing place
-                            # Minimum distance between places: 500m (0.5km) to avoid clustering
-                            min_distance_between_places_m = 500.0
+                            # Deduplicate: skip if same physical place already collected
+                            min_distance_between_places_m = 200.0
                             is_too_close = False
                             
                             for existing_place in all_places:
@@ -399,12 +398,19 @@ def get_places_along_route(route_points, place_type="hospital", max_results=10):
                             address = place.get('formattedAddress', 'Address not available')
                             phone = place.get('internationalPhoneNumber', f'Emergency: {"112" if place_type == "hospital" else "100"}')
                             
-                            # Calculate distance from route (use nearest route point) - optimized
-                            # Sample route points for distance calculation to avoid performance issues
+                            # Calculate distance from route and position along route
                             sample_for_distance = route_points[::max(1, len(route_points)//20)] if len(route_points) > 20 else route_points
-                            min_distance = min([haversine(place_lat, place_lng, rp[0], rp[1]) for rp in sample_for_distance])
+                            distances = [haversine(place_lat, place_lng, rp[0], rp[1]) for rp in sample_for_distance]
+                            min_idx = distances.index(min(distances))
+                            min_distance = distances[min_idx]
                             distance_km = min_distance / 1000.0
-                            
+
+                            # Route position: 0.0 = start, 1.0 = end
+                            # Use the sample index scaled back to full route proportion
+                            scale = max(1, len(route_points) // 20) if len(route_points) > 20 else 1
+                            nearest_full_idx = min_idx * scale
+                            route_position = nearest_full_idx / max(1, len(route_points) - 1)
+
                             place_data = {
                                 "name": name,
                                 "address": address,
@@ -412,24 +418,16 @@ def get_places_along_route(route_points, place_type="hospital", max_results=10):
                                 "lat": place_lat,
                                 "lng": place_lng,
                                 "distance_from_route_km": round(distance_km, 2),
-                                "distance_from_route": f"{distance_km:.1f} km"
+                                "distance_from_route": f"{distance_km:.1f} km",
+                                "route_position": round(route_position, 3)
                             }
-                            
+
                             all_places.append(place_data)
-                            
-                            # Early exit if we have enough results
-                            if len(all_places) >= max_results * 2:  # Get extra for final deduplication
-                                break
-                            
+
                         except Exception as e:
                             print(f"⚠️ Error processing {place_type}: {e}")
                             continue
-                
-                # No delay - removed to speed up response
-                # If we have enough results, break early
-                if len(all_places) >= max_results:
-                    break
-                    
+
             except requests.Timeout:
                 print(f"⚠️ Timeout searching for {place_type} at point {idx}")
                 continue
@@ -437,31 +435,35 @@ def get_places_along_route(route_points, place_type="hospital", max_results=10):
                 print(f"⚠️ Error searching at point {idx}: {e}")
                 continue
         
-        # Final deduplication pass: Remove places that are too close to each other
-        # Sort by distance from route first (closest to route preferred)
-        all_places.sort(key=lambda x: x['distance_from_route_km'])
-        
-        # Filter to ensure minimum 500m spacing between places
+        # Evenly distribute by route_position value (0.0=start → 1.0=end),
+        # NOT by list index — this guarantees middle segments are always checked.
+        all_places.sort(key=lambda x: x['route_position'])
+
         final_places = []
-        min_spacing_m = 500.0  # Minimum 500m between any two places
-        
-        for place in all_places:
-            is_too_close = False
-            for existing in final_places:
-                distance = haversine(
-                    place['lat'], place['lng'],
-                    existing['lat'], existing['lng']
+        if len(all_places) <= max_results:
+            final_places = all_places
+        else:
+            # Slice the 0.0–1.0 range into max_results equal bands
+            # and pick the closest-to-route candidate from each band
+            for i in range(max_results):
+                band_start = i / max_results
+                band_end   = (i + 1) / max_results
+                candidates = [
+                    p for p in all_places
+                    if band_start <= p['route_position'] < band_end
+                ]
+                if not candidates:
+                    continue
+                best = min(candidates, key=lambda x: x['distance_from_route_km'])
+                # Skip if a very nearby place was already selected (300m threshold)
+                too_close = any(
+                    haversine(best['lat'], best['lng'], sel['lat'], sel['lng']) < 300.0
+                    for sel in final_places
                 )
-                if distance < min_spacing_m:
-                    is_too_close = True
-                    break
-            
-            if not is_too_close:
-                final_places.append(place)
-                if len(final_places) >= max_results:
-                    break
-        
-        print(f"✅ Found {len(final_places)} unique {place_type}s along route (min 500m spacing)")
+                if not too_close:
+                    final_places.append(best)
+
+        print(f"✅ Found {len(final_places)} evenly distributed {place_type}s along route")
         return final_places
         
     except Exception as e:
@@ -482,63 +484,40 @@ def get_safety_counts(route_points):
     Returns:
         Tuple of (counts_dict, locations_dict)
     """
-    print(f"🏥 Searching for real hospitals and police stations along route...")
-    
-    # Use shorter max_results to speed up
-    max_hospitals = 10
-    max_police = 5
-    
-    # Find real hospitals along the route (with timeout protection)
-    try:
-        hospitals = get_places_along_route(route_points, place_type="hospital", max_results=max_hospitals)
-    except Exception as e:
-        print(f"⚠️ Error finding hospitals: {e}")
-        hospitals = []
-    
-    # Find real police stations along the route (with timeout protection)
-    try:
-        police_stations = get_places_along_route(route_points, place_type="police", max_results=max_police)
-    except Exception as e:
-        print(f"⚠️ Error finding police stations: {e}")
-        police_stations = []
-    
-    # Format locations for frontend
-    hospital_locations = [
-        {
-            "lat": h["lat"],
-            "lng": h["lng"],
-            "name": h["name"],
-            "address": h["address"],
-            "phone": h["phone"],
-            "distance": h["distance_from_route"]
-        }
-        for h in hospitals
-    ]
-    
-    police_locations = [
-        {
-            "lat": p["lat"],
-            "lng": p["lng"],
-            "name": p["name"],
-            "address": p["address"],
-            "phone": p["phone"],
-            "distance": p["distance_from_route"]
-        }
-        for p in police_stations
-    ]
-    
+    print(f"🏥 Searching for hospitals, police, petrol pumps and hotels along route...")
+
+    def fetch(place_type, max_results):
+        try:
+            return get_places_along_route(route_points, place_type=place_type, max_results=max_results)
+        except Exception as e:
+            print(f"⚠️ Error finding {place_type}: {e}")
+            return []
+
+    hospitals       = fetch("hospital",    max_results=6)
+    police_stations = fetch("police",      max_results=4)
+    gas_stations    = fetch("gas_station", max_results=4)
+    hotels          = fetch("lodging",     max_results=3)
+
+    def fmt(places):
+        return [{"lat": p["lat"], "lng": p["lng"], "name": p["name"],
+                 "address": p["address"], "phone": p["phone"],
+                 "distance": p["distance_from_route"]} for p in places]
+
     counts = {
         "hospitals": len(hospitals),
-        "police": len(police_stations)
+        "police":    len(police_stations)
     }
-    
+
     locations = {
-        "hospitals": hospital_locations,
-        "police": police_locations
+        "hospitals":    fmt(hospitals),
+        "police":       fmt(police_stations),
+        "gas_stations": fmt(gas_stations),
+        "hotels":       fmt(hotels)
     }
-    
-    print(f"📊 Route safety counts: {counts['hospitals']} hospitals, {counts['police']} police stations")
-    
+
+    print(f"📊 Route POIs: {len(hospitals)} hospitals, {len(police_stations)} police, "
+          f"{len(gas_stations)} petrol pumps, {len(hotels)} hotels")
+
     return counts, locations
 
 def generate_safety_warnings(crime_incidents, amenities, light_score):
@@ -1282,61 +1261,80 @@ def get_routes():
         if destination.lower() == "demo":
             destination = "17.4401,78.3489"
         
-        directions_url = "https://maps.googleapis.com/maps/api/directions/json"
-        params = {"origin": source, "destination": destination, "alternatives": "true", "key": API_KEY}
-        response = requests.get(directions_url, params=params, timeout=15).json()
-        
-        print(f"🗺️ Google Directions API Response:")
-        print(f"   Status: {response.get('status')}")
-        print(f"   Routes returned: {len(response.get('routes', []))}")
-        
-        if response.get("status") != "OK":
-            return jsonify({"error": f"Directions failed: {response.get('status')}"}), 400
-        
-        google_routes = response.get("routes", [])
-        print(f"📊 Processing {len(google_routes)} routes from Google Directions API")
-        
+        # Use routes sent by the frontend (same Directions API call) to guarantee
+        # index alignment. Fall back to a fresh Directions API call if not provided.
+        frontend_routes = data.get("frontend_routes", [])
+
+        if frontend_routes:
+            print(f"✅ Using {len(frontend_routes)} routes provided by frontend (index-safe)")
+            raw_routes = frontend_routes  # list of {index, polyline, distance_text, distance_meters, duration_text, duration_seconds, summary}
+        else:
+            print(f"⚠️ No frontend routes provided, falling back to Directions API call")
+            directions_url = "https://maps.googleapis.com/maps/api/directions/json"
+            params = {"origin": source, "destination": destination, "alternatives": "true", "key": API_KEY}
+            response = requests.get(directions_url, params=params, timeout=15).json()
+            print(f"   Status: {response.get('status')}, Routes: {len(response.get('routes', []))}")
+            if response.get("status") != "OK":
+                return jsonify({"error": f"Directions failed: {response.get('status')}"}), 400
+            raw_routes = [
+                {
+                    "index": i,
+                    "polyline": r["overview_polyline"]["points"],
+                    "distance_text": r["legs"][0]["distance"]["text"],
+                    "distance_meters": r["legs"][0]["distance"]["value"],
+                    "duration_text": r["legs"][0]["duration"]["text"],
+                    "duration_seconds": r["legs"][0]["duration"]["value"],
+                    "summary": r.get("summary", "")
+                }
+                for i, r in enumerate(response.get("routes", []))
+            ]
+
+        print(f"📊 Processing {len(raw_routes)} routes")
+
         routes_data = []
-        for route_idx, route in enumerate(google_routes):
-            leg = route["legs"][0]
-            polyline_str = route["overview_polyline"]["points"]
+        for rr in raw_routes:
+            route_idx    = rr["index"]
+            polyline_str = rr["polyline"]
             route_points = polyline.decode(polyline_str)
-            distance_km = leg["distance"]["value"] / 1000
-            area_type = "Main Road" if "highway" in route.get("summary", "").lower() else "Urban"
-            
-            # Generate safety data with REAL hospitals and police stations along route
-            print(f"🔍 Route {route_idx + 1}: Finding real emergency services along {len(route_points)} route points...")
+            distance_km  = rr["distance_meters"] / 1000
+            area_type    = "Main Road" if "highway" in rr.get("summary", "").lower() else "Urban"
+
+            print(f"🔍 Route {route_idx + 1}: Finding services along {len(route_points)} points...")
             try:
                 amenities, locations = get_safety_counts(route_points)
             except Exception as e:
-                print(f"⚠️ Error getting safety counts for route {route_idx + 1}: {e}")
-                # Fallback to empty counts if API fails
+                print(f"⚠️ Safety counts failed for route {route_idx + 1}: {e}")
                 amenities = {"hospitals": 0, "police": 0}
-                locations = {"hospitals": [], "police": []}
-            
-            crime_incidents = generate_realistic_crime_incidents(route_points, area_type)
+                locations = {"hospitals": [], "police": [], "gas_stations": [], "hotels": []}
+
+            crime_incidents   = generate_realistic_crime_incidents(route_points, area_type)
             street_light_score = estimate_street_light_score(route_points, area_type)
-            crime_score = calculate_crime_risk_score(crime_incidents, route_points)
-            safety_score = calculate_final_safety_score(amenities["hospitals"], amenities["police"], street_light_score, crime_score, distance_km)
-            
+            crime_score       = calculate_crime_risk_score(crime_incidents, route_points)
+            safety_score      = calculate_final_safety_score(
+                amenities["hospitals"], amenities["police"],
+                street_light_score, crime_score, distance_km
+            )
+
             route_data = {
-                "distance": leg["distance"]["text"],
-                "duration": leg["duration"]["text"],
-                "distance_meters": leg["distance"]["value"],
-                "duration_seconds": leg["duration"]["value"],
+                "distance": rr["distance_text"],
+                "duration": rr["duration_text"],
+                "distance_meters": rr["distance_meters"],
+                "duration_seconds": rr["duration_seconds"],
                 "polyline": polyline_str,
                 "hospital_count": amenities["hospitals"],
                 "police_count": amenities["police"],
                 "crime_incidents": crime_incidents,
                 "hospital_locations": locations.get("hospitals", []),
-                "police_locations": locations.get("police", []),
+                "police_locations":   locations.get("police", []),
+                "gas_locations":      locations.get("gas_stations", []),
+                "hotel_locations":    locations.get("hotels", []),
                 "area_type": area_type,
                 "street_light_score": street_light_score,
                 "crime_score": crime_score,
                 "safety_score": safety_score,
-                "summary": route.get("summary", ""),
+                "summary": rr.get("summary", ""),
                 "warnings": generate_safety_warnings(crime_incidents, amenities, street_light_score),
-                "index": route_idx
+                "index": route_idx   # ← matches frontend's lastDirectionsResult.routes[index]
             }
             routes_data.append(route_data)
         
@@ -1394,6 +1392,8 @@ def get_routes():
                         ),
                         "hospital_locations": [],
                         "police_locations": [],
+                        "gas_locations": [],
+                        "hotel_locations": [],
                         "area_type": area_type,
                         "street_light_score": max(30, min(90, base_route['street_light_score'] + safety_modifier)),
                         "crime_score": min(100, base_route['crime_score'] - safety_modifier),
@@ -1535,6 +1535,84 @@ def get_routes():
     except Exception as e:
         print(f"Server Error: {e}\n{traceback.format_exc()}")
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
+
+@app.route("/explain-route", methods=["POST", "OPTIONS"])
+def explain_route():
+    """Use Groq AI to explain why a route is safe or unsafe in natural language"""
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+    if not groq_client:
+        return jsonify({"error": "Groq AI not available"}), 503
+
+    try:
+        data = request.json or {}
+        route = data.get("route", {})
+        route_index = data.get("route_index", 0)
+
+        safety_score   = route.get("safety_score", 0)
+        hospital_count = route.get("hospital_count", 0)
+        police_count   = route.get("police_count", 0)
+        light_score    = route.get("street_light_score", 0)
+        crime_score    = route.get("crime_score", 0)
+        distance       = route.get("distance", "unknown")
+        duration       = route.get("duration", "unknown")
+        area_type      = route.get("area_type", "Mixed")
+        warnings       = route.get("warnings", [])
+        incidents      = route.get("crime_incidents", [])
+
+        # Summarise incidents for the prompt
+        incident_summary = {}
+        for inc in incidents:
+            t = inc.get("type", "unknown")
+            incident_summary[t] = incident_summary.get(t, 0) + 1
+        incident_text = ", ".join([f"{v} {k}" for k, v in incident_summary.items()]) or "none reported"
+
+        prompt = f"""You are SafeRoute AI, a personal safety assistant. Explain in 3-4 short, friendly sentences why Route {route_index + 1} has a safety score of {safety_score}/100.
+
+Route data:
+- Safety Score: {safety_score}/100
+- Hospitals nearby: {hospital_count}
+- Police stations nearby: {police_count}
+- Street lighting: {light_score}%
+- Crime risk index: {crime_score}/100
+- Distance: {distance}, Duration: {duration}
+- Area type: {area_type}
+- Reported incidents: {incident_text}
+- Warnings: {'; '.join(warnings) if warnings else 'none'}
+
+Rules:
+- Be concise and direct (3-4 sentences max)
+- Start with the most important safety factor
+- Give ONE practical tip at the end
+- Do NOT use bullet points or markdown — plain sentences only
+- Tone: calm, helpful, like a knowledgeable friend"""
+
+        response = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are SafeRoute AI, a safety navigation assistant. Give clear, concise route safety explanations in plain text."},
+                {"role": "user", "content": prompt}
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.4,
+            max_tokens=200
+        )
+
+        explanation = response.choices[0].message.content.strip()
+        print(f"🤖 AI Safety Explainer: Route {route_index + 1} explained ({len(explanation)} chars)")
+
+        return jsonify({
+            "status": "success",
+            "route_index": route_index,
+            "safety_score": safety_score,
+            "explanation": explanation
+        })
+
+    except Exception as e:
+        print(f"Explain Route Error: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/post-feedback", methods=["POST", "OPTIONS"])
 def post_feedback():

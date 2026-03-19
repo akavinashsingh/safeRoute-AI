@@ -4,6 +4,7 @@ let rendererArray = [], currentRoutes = [], lastDirectionsResult = null;
 let userMarker = null, crimeMarkers = [], feedbackMarkers = [];
 let hospitalMarkers = [], policeMarkers = []; // Markers for hospitals and police stations
 let allFeedbacks = [];
+let heatmapLayer = null, heatmapActive = false;
 const socket = io(window.BACKEND_URL);
 
 /* --- Secure Google Maps API Loader --- */
@@ -153,6 +154,7 @@ function initializeSocketIO() {
     allFeedbacks.unshift(data);
     updateFeedbackListUI();
     addFeedbackMarker(data);
+    refreshHeatmapIfActive();
   });
     socket.on("data_cleared", (data) => {
     console.log('🗑️ Data cleared event received:', data);
@@ -209,11 +211,23 @@ window.findRoutes = function () {
 
 function sendToBackendForAnalysis(source, destination) {
   console.log(`🔍 Sending route request to backend: ${source} → ${destination}`);
-  
+
+  // Pass the exact routes Google returned to the frontend so the backend
+  // analyses the same polylines — no separate Directions call, no index mismatch.
+  const frontendRoutes = (lastDirectionsResult && lastDirectionsResult.routes || []).map((r, i) => ({
+    index: i,
+    polyline: r.overview_polyline.points,
+    distance_text: r.legs[0].distance.text,
+    distance_meters: r.legs[0].distance.value,
+    duration_text: r.legs[0].duration.text,
+    duration_seconds: r.legs[0].duration.value,
+    summary: r.summary || ''
+  }));
+
   fetch(`${window.BACKEND_URL}/get-routes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source, destination })
+    body: JSON.stringify({ source, destination, frontend_routes: frontendRoutes })
   })
     .then((res) => res.json())
     .then((data) => {
@@ -234,6 +248,7 @@ function sendToBackendForAnalysis(source, destination) {
         currentRoutes = data;
         displayRouteCards(data);
         selectRoute(0);
+        refreshHeatmapIfActive();
       } else {
         alert("No route analysis data returned.");
       }
@@ -272,7 +287,7 @@ function displayRouteCards(routes) {
         <span class="score-val">${score}</span>
         <span class="score-txt">${scoreText}</span>
       </div>
-      <div class="route-info">
+      <div class="route-info" style="flex:1">
         <h4>Route ${index + 1}</h4>
         <div class="route-meta">
           <span><i class="fa-regular fa-clock"></i> ${route.duration}</span>
@@ -282,6 +297,13 @@ function displayRouteCards(routes) {
           <span class="badge"><i class="fa-solid fa-hospital"></i> ${route.hospital_count || 0} Hospitals</span>
           <span class="badge"><i class="fa-solid fa-user-shield"></i> ${route.police_count || 0} Police Stn</span>
           <span class="badge"><i class="fa-solid fa-lightbulb"></i> ${route.street_light_score || 0}% Lights</span>
+        </div>
+        <button class="ai-explain-btn" onclick="explainRoute(event, ${index})">
+          <i class="fa-solid fa-robot"></i> Ask AI Why
+        </button>
+        <div class="ai-explanation-panel" id="ai-panel-${index}">
+          <div class="ai-header"><i class="fa-solid fa-robot"></i> SafeRoute AI</div>
+          <div id="ai-text-${index}"></div>
         </div>
       </div>
     `;
@@ -315,6 +337,55 @@ window.selectRoute = function (index) {
   }
 };
 
+/* --- AI Safety Explainer --- */
+window.explainRoute = async function(event, index) {
+  event.stopPropagation(); // Don't trigger route selection
+
+  const btn = event.currentTarget;
+  const panel = document.getElementById(`ai-panel-${index}`);
+  const textEl = document.getElementById(`ai-text-${index}`);
+  const route = currentRoutes[index];
+
+  if (!route) return;
+
+  // Toggle off if already visible
+  if (panel.classList.contains('visible')) {
+    panel.classList.remove('visible');
+    btn.innerHTML = '<i class="fa-solid fa-robot"></i> Ask AI Why';
+    return;
+  }
+
+  // Show loading state
+  btn.classList.add('loading');
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Analyzing...';
+  panel.classList.add('visible');
+  textEl.textContent = 'SafeRoute AI is analyzing this route...';
+
+  try {
+    const res = await fetch(`${window.BACKEND_URL}/explain-route`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ route_index: index, route: route })
+    });
+
+    const data = await res.json();
+
+    if (data.explanation) {
+      textEl.textContent = data.explanation;
+      btn.innerHTML = '<i class="fa-solid fa-robot"></i> Hide AI Insight';
+    } else {
+      textEl.textContent = 'Unable to generate explanation. Please try again.';
+      btn.innerHTML = '<i class="fa-solid fa-robot"></i> Ask AI Why';
+    }
+  } catch (err) {
+    textEl.textContent = 'Could not reach SafeRoute AI. Check your connection.';
+    btn.innerHTML = '<i class="fa-solid fa-robot"></i> Ask AI Why';
+    console.error('AI Explain Error:', err);
+  } finally {
+    btn.classList.remove('loading');
+  }
+};
+
 /* --- ✅ UPDATED: Route Rendering with Safety Colors --- */
 function renderAllRoutes(selectedIndex) {
   rendererArray.forEach((r) => r.setMap(null));
@@ -327,11 +398,16 @@ function renderAllRoutes(selectedIndex) {
 
   // Handle both real Google routes and synthetic routes
   const totalRoutes = Math.max(lastDirectionsResult.routes.length, currentRoutes.length);
-  
+
   for (let index = 0; index < totalRoutes; index++) {
     const isSelected = index === selectedIndex;
-    const hasGoogleRoute = index < lastDirectionsResult.routes.length;
     const hasRouteData = index < currentRoutes.length;
+    // Use the original Google route index stored during backend sorting,
+    // so the correct polyline is drawn for each safety-ranked card.
+    const originalRouteIndex = (hasRouteData && currentRoutes[index].index !== undefined)
+      ? currentRoutes[index].index
+      : index;
+    const hasGoogleRoute = originalRouteIndex < lastDirectionsResult.routes.length;
     
     // ✅ Get safety-based color for ALL routes (not just selected)
     let routeColor = "#94a3b8"; // Default gray fallback
@@ -355,7 +431,7 @@ function renderAllRoutes(selectedIndex) {
       const renderer = new google.maps.DirectionsRenderer({
         map: map,
         directions: lastDirectionsResult,
-        routeIndex: index,
+        routeIndex: originalRouteIndex,
         suppressMarkers: isSelected,
         polylineOptions: {
           strokeColor: routeColor,
@@ -423,6 +499,37 @@ window.getCurrentLocationForInput = function () {
         }
         map.setCenter(crd);
         map.setZoom(16);
+
+        // Place / move the "You are here" marker
+        if (userMarker) userMarker.setMap(null);
+        userMarker = new google.maps.Marker({
+          position: crd,
+          map: map,
+          title: "Your Location",
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: "#0ea5e9",
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 3
+          },
+          zIndex: 999,
+          animation: google.maps.Animation.DROP
+        });
+
+        // Info bubble showing address
+        const label = (status === "OK" && results[0])
+          ? results[0].formatted_address
+          : `${crd.lat.toFixed(5)}, ${crd.lng.toFixed(5)}`;
+        const infoWindow = new google.maps.InfoWindow({
+          content: `<div style="font-size:13px;font-weight:600;padding:2px 4px">
+                      <i style="color:#0ea5e9">📍</i> <b>You are here</b><br>
+                      <span style="font-weight:400;color:#555">${label}</span>
+                    </div>`
+        });
+        infoWindow.open(map, userMarker);
+        userMarker.addListener("click", () => infoWindow.open(map, userMarker));
       });
     },
     (err) => {
@@ -1059,6 +1166,93 @@ function clearCrimeVisualization() {
   crimeMarkers = [];
 }
 
+/* --- Danger Heatmap --- */
+const HEATMAP_WEIGHTS = {
+  assault: 3, robbery: 3,
+  theft: 2, harassment: 2, burglary: 2,
+  vandalism: 1, accident: 1
+};
+
+function buildHeatmapPoints() {
+  const points = [];
+
+  // Crime incidents from all loaded routes
+  currentRoutes.forEach(route => {
+    (route.crime_incidents || []).forEach(inc => {
+      if (inc.lat && inc.lng) {
+        const weight = HEATMAP_WEIGHTS[inc.type] || 1;
+        points.push({ location: new google.maps.LatLng(inc.lat, inc.lng), weight });
+      }
+    });
+  });
+
+  // Community feedback markers
+  allFeedbacks.forEach(fb => {
+    if (fb.lat && fb.lng) {
+      points.push({ location: new google.maps.LatLng(fb.lat, fb.lng), weight: 2 });
+    }
+  });
+
+  return points;
+}
+
+window.toggleHeatmap = function() {
+  const btn = document.getElementById('heatmap-toggle-btn');
+  const legend = document.getElementById('heatmap-legend');
+
+  if (heatmapActive) {
+    // Turn off
+    if (heatmapLayer) heatmapLayer.setMap(null);
+    heatmapActive = false;
+    btn.classList.remove('active');
+    btn.innerHTML = '<i class="fa-solid fa-fire"></i><span>Heatmap</span>';
+    legend.classList.add('hidden');
+    return;
+  }
+
+  // Build points
+  const points = buildHeatmapPoints();
+  if (points.length === 0) {
+    alert('Search for a route first to load danger data onto the heatmap.');
+    return;
+  }
+
+  // Create or update heatmap layer
+  if (!heatmapLayer) {
+    heatmapLayer = new google.maps.visualization.HeatmapLayer({
+      data: points,
+      map: map,
+      radius: 50,
+      opacity: 0.92,
+      gradient: [
+        'rgba(0,0,0,0)',
+        'rgba(255,220,0,0.85)',
+        'rgba(255,140,0,1)',
+        'rgba(255,60,0,1)',
+        'rgba(220,0,0,1)',
+        'rgba(160,0,0,1)'
+      ]
+    });
+  } else {
+    heatmapLayer.setData(points);
+    heatmapLayer.setMap(map);
+  }
+
+  heatmapActive = true;
+  btn.classList.add('active');
+  btn.innerHTML = '<i class="fa-solid fa-fire"></i><span>Hide Map</span>';
+  legend.classList.remove('hidden');
+  console.log(`🔥 Heatmap active with ${points.length} data points`);
+};
+
+// Refresh heatmap data whenever new routes load (if it's already active)
+function refreshHeatmapIfActive() {
+  if (!heatmapActive || !heatmapLayer) return;
+  const points = buildHeatmapPoints();
+  heatmapLayer.setData(points);
+  console.log(`🔥 Heatmap refreshed: ${points.length} points`);
+}
+
 function clearHospitalsAndPolice() {
   hospitalMarkers.forEach((m) => {
     if (m.marker) m.marker.setMap(null);
@@ -1072,117 +1266,114 @@ function clearHospitalsAndPolice() {
   policeMarkers = [];
 }
 
+/* --- Custom SVG Pin Icon Generator --- */
+function createPinIcon(bgColor, emoji) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="38" viewBox="0 0 42 54">
+    <defs>
+      <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#00000055"/>
+      </filter>
+    </defs>
+    <path d="M21 2 C10.5 2 2 10.5 2 21 C2 34 21 52 21 52 C21 52 40 34 40 21 C40 10.5 31.5 2 21 2Z"
+          fill="${bgColor}" filter="url(#s)"/>
+    <circle cx="21" cy="21" r="14" fill="white" opacity="0.22"/>
+    <text x="21" y="27" text-anchor="middle" font-size="17" font-family="Segoe UI Emoji,Apple Color Emoji,sans-serif">${emoji}</text>
+  </svg>`;
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(30, 38),
+    anchor: new google.maps.Point(15, 36)
+  };
+}
+
+function makePOIInfoWindow(color, titleHtml, place, defaultPhone) {
+  const name = (place.name || '').replace(/'/g, "\\'");
+  return new google.maps.InfoWindow({
+    content: `
+      <div style="padding:14px;max-width:260px;font-family:'Inter',sans-serif">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="width:4px;height:36px;background:${color};border-radius:2px;flex-shrink:0"></div>
+          <h4 style="margin:0;color:${color};font-size:14px;font-weight:700;line-height:1.3">${titleHtml}</h4>
+        </div>
+        <p style="margin:4px 0;font-size:12px;color:#555;line-height:1.4">${place.address || 'Address not available'}</p>
+        <p style="margin:6px 0;font-size:13px;color:#16a34a;font-weight:700">
+          📞 ${place.phone || defaultPhone}
+        </p>
+        ${place.distance ? `<p style="margin:4px 0;font-size:11px;color:#999">📍 ${place.distance} from route</p>` : ''}
+        <button onclick="navigateToEmergencyService('${name}',${place.lat},${place.lng},${map.getCenter().lat()},${map.getCenter().lng()})"
+          style="margin-top:10px;background:${color};color:white;border:none;padding:7px 14px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700;width:100%">
+          🗺 Navigate Here
+        </button>
+      </div>`
+  });
+}
+
 function showHospitalsAndPolice(routeData) {
-  // Clear existing markers first
   clearHospitalsAndPolice();
-  
   if (!routeData) return;
-  
-  // Display hospitals
-  if (routeData.hospital_locations && routeData.hospital_locations.length > 0) {
-    console.log(`🏥 Displaying ${routeData.hospital_locations.length} hospitals on map`);
-    
-    routeData.hospital_locations.forEach((hospital) => {
+
+  const POI_CONFIG = [
+    {
+      key: 'hospital_locations',
+      store: hospitalMarkers,
+      icon: createPinIcon('#ef4444', '🏥'),
+      color: '#ef4444',
+      defaultTitle: 'Hospital',
+      phone: 'Emergency: 112',
+      label: 'Hospital'
+    },
+    {
+      key: 'police_locations',
+      store: policeMarkers,
+      icon: createPinIcon('#1d4ed8', '👮'),
+      color: '#1d4ed8',
+      defaultTitle: 'Police Station',
+      phone: 'Emergency: 100',
+      label: 'Police Station'
+    },
+    {
+      key: 'gas_locations',
+      store: hospitalMarkers,   // reuse array — cleared together
+      icon: createPinIcon('#d97706', '⛽'),
+      color: '#d97706',
+      defaultTitle: 'Petrol Pump',
+      phone: 'N/A',
+      label: 'Petrol Pump'
+    },
+    {
+      key: 'hotel_locations',
+      store: policeMarkers,     // reuse array — cleared together
+      icon: createPinIcon('#7c3aed', '🏨'),
+      color: '#7c3aed',
+      defaultTitle: 'Hotel / Safe Place',
+      phone: 'N/A',
+      label: 'Hotel'
+    }
+  ];
+
+  POI_CONFIG.forEach(({ key, store, icon, color, defaultTitle, phone }) => {
+    const places = routeData[key];
+    if (!places || places.length === 0) return;
+    console.log(`📍 Displaying ${places.length} ${defaultTitle}s`);
+
+    places.forEach(place => {
       const marker = new google.maps.Marker({
-        position: { lat: hospital.lat, lng: hospital.lng },
-        map: map,
-        title: hospital.name || 'Hospital',
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 10,
-          fillColor: '#dc3545', // Red for hospitals
-          fillOpacity: 0.9,
-          strokeColor: '#ffffff',
-          strokeWeight: 2
-        },
-        label: {
-          text: 'H',
-          color: '#ffffff',
-          fontSize: '12px',
-          fontWeight: 'bold'
-        }
+        position: { lat: place.lat, lng: place.lng },
+        map,
+        title: place.name || defaultTitle,
+        icon,
+        animation: google.maps.Animation.DROP,
+        zIndex: 200
       });
-      
-      const infoWindow = new google.maps.InfoWindow({
-        content: `
-          <div style="padding: 12px; max-width: 250px;">
-            <h4 style="margin: 0 0 8px 0; color: #dc3545; font-size: 16px;">
-              <i class="fa-solid fa-hospital"></i> ${hospital.name || 'Hospital'}
-            </h4>
-            <p style="margin: 4px 0; font-size: 13px; color: #666;">${hospital.address || 'Address not available'}</p>
-            <p style="margin: 4px 0; font-size: 13px; color: #28a745; font-weight: 600;">
-              <i class="fa-solid fa-phone"></i> ${hospital.phone || 'Emergency: 112'}
-            </p>
-            ${hospital.distance ? `<p style="margin: 4px 0; font-size: 12px; color: #999;"><i class="fa-solid fa-ruler"></i> ${hospital.distance} from route</p>` : ''}
-            <button onclick="navigateToEmergencyService('${(hospital.name || 'Hospital').replace(/'/g, "\\'")}', ${hospital.lat}, ${hospital.lng}, ${map.getCenter().lat()}, ${map.getCenter().lng()});" 
-                    style="margin-top: 8px; background: #007bff; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: 600;">
-              <i class="fa-solid fa-route"></i> Navigate
-            </button>
-          </div>
-        `
-      });
-      
-      marker.addListener("click", () => {
-        infoWindow.open(map, marker);
-      });
-      
-      hospitalMarkers.push({ marker, infoWindow });
+
+      const title = `${place.name || defaultTitle}`;
+      const iw = makePOIInfoWindow(color, title, place, phone);
+      marker.addListener('click', () => iw.open(map, marker));
+      store.push({ marker, infoWindow: iw });
     });
-  }
-  
-  // Display police stations
-  if (routeData.police_locations && routeData.police_locations.length > 0) {
-    console.log(`👮 Displaying ${routeData.police_locations.length} police stations on map`);
-    
-    routeData.police_locations.forEach((police) => {
-      const marker = new google.maps.Marker({
-        position: { lat: police.lat, lng: police.lng },
-        map: map,
-        title: police.name || 'Police Station',
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 10,
-          fillColor: '#007bff', // Blue for police
-          fillOpacity: 0.9,
-          strokeColor: '#ffffff',
-          strokeWeight: 2
-        },
-        label: {
-          text: 'P',
-          color: '#ffffff',
-          fontSize: '12px',
-          fontWeight: 'bold'
-        }
-      });
-      
-      const infoWindow = new google.maps.InfoWindow({
-        content: `
-          <div style="padding: 12px; max-width: 250px;">
-            <h4 style="margin: 0 0 8px 0; color: #007bff; font-size: 16px;">
-              <i class="fa-solid fa-shield-halved"></i> ${police.name || 'Police Station'}
-            </h4>
-            <p style="margin: 4px 0; font-size: 13px; color: #666;">${police.address || 'Address not available'}</p>
-            <p style="margin: 4px 0; font-size: 13px; color: #28a745; font-weight: 600;">
-              <i class="fa-solid fa-phone"></i> ${police.phone || 'Emergency: 100'}
-            </p>
-            ${police.distance ? `<p style="margin: 4px 0; font-size: 12px; color: #999;"><i class="fa-solid fa-ruler"></i> ${police.distance} from route</p>` : ''}
-            <button onclick="navigateToEmergencyService('${(police.name || 'Police Station').replace(/'/g, "\\'")}', ${police.lat}, ${police.lng}, ${map.getCenter().lat()}, ${map.getCenter().lng()});" 
-                    style="margin-top: 8px; background: #007bff; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: 600;">
-              <i class="fa-solid fa-route"></i> Navigate
-            </button>
-          </div>
-        `
-      });
-      
-      marker.addListener("click", () => {
-        infoWindow.open(map, marker);
-      });
-      
-      policeMarkers.push({ marker, infoWindow });
-    });
-  }
-  
-  console.log(`✅ Displayed ${hospitalMarkers.length} hospitals and ${policeMarkers.length} police stations`);
+  });
+
+  console.log(`✅ POI markers: ${hospitalMarkers.length} hospitals/petrol, ${policeMarkers.length} police/hotels`);
 }
 
 function clearFeedback() {
