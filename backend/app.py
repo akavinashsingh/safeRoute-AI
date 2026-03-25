@@ -72,21 +72,11 @@ if GROQ_AVAILABLE and GROQ_API_KEY:
     try:
         groq_client = Groq(api_key=GROQ_API_KEY)
         print("✅ Groq AI configured successfully")
-        
-        # Test Groq connection
-        test_response = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": "Say 'OK' if you're working"}],
-            model="llama-3.1-8b-instant",  # Updated to current model
-            max_tokens=10
-        )
-        print(f"✅ Groq test successful: {test_response.choices[0].message.content}")
     except Exception as e:
-        print(f"❌ Groq configuration failed: {e}")
-        print("🔄 Will use Google Places API as primary provider")
+        print(f"❌ Groq client init failed: {e}")
         groq_client = None
 else:
     print("⚠️ Groq AI not configured - missing library or API key")
-    print("🔄 Will use Google Places API as primary provider")
 
 # Crime Database for Route Analysis
 CRIME_DATABASE = {
@@ -1620,7 +1610,7 @@ def predict_safety():
         hospitals   = route.get("hospital_count", 0)
 
         now   = datetime.now()
-        hour  = now.hour
+        hour  = data.get("client_hour", now.hour)  # prefer client's local hour (avoids UTC offset on server)
         dow   = now.weekday()   # 0=Mon … 6=Sun
         is_weekend = dow >= 5
 
@@ -1706,7 +1696,7 @@ def narrate_route():
         data       = request.json or {}
         route      = data.get("route", {})
         route_num  = data.get("route_index", 0) + 1
-        hour       = datetime.now().hour
+        hour       = data.get("client_hour", datetime.now().hour)
 
         if hour < 6:    time_ctx = "late night"
         elif hour < 12: time_ctx = "morning"
@@ -2037,7 +2027,7 @@ def ai_status():
             try:
                 test_response = groq_client.chat.completions.create(
                     messages=[{"role": "user", "content": "Test"}],
-                    model="llama-3.1-8b-instant",
+                    model="llama-3.3-70b-versatile",
                     max_tokens=5
                 )
                 status_info["groq_test_success"] = True

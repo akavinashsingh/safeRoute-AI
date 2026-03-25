@@ -63,8 +63,18 @@ async function loadGoogleMapsAPI() {
     }
 }
 
+// Ping backend on load so Render free-tier wakes up before the user needs AI features
+function warmUpBackend() {
+  fetch(`${window.BACKEND_URL}/health`, { method: 'GET' })
+    .then(() => console.log('✅ Backend is warm'))
+    .catch(() => console.log('⏳ Backend waking up...'));
+}
+
 // Load Google Maps API when page loads
-document.addEventListener('DOMContentLoaded', loadGoogleMapsAPI);
+document.addEventListener('DOMContentLoaded', () => {
+  warmUpBackend();
+  loadGoogleMapsAPI();
+});
 
 /* --- ✅ NEW: Safety-Based Color System --- */
 const getSafetyColor = (safetyScore) => {
@@ -380,7 +390,7 @@ window.explainRoute = async function(event, index) {
 
     if (res.status === 503) {
       if (attempt < 3) {
-        const waitSec = attempt * 15;
+        const waitSec = attempt * 20;
         textEl.textContent = `AI service is starting up... retrying in ${waitSec}s (attempt ${attempt}/3)`;
         btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Waking up...`;
         await new Promise(r => setTimeout(r, waitSec * 1000));
@@ -432,7 +442,7 @@ async function loadForecast(index) {
     const res  = await fetch(`${window.BACKEND_URL}/predict-safety`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ route_index: index, route })
+      body: JSON.stringify({ route_index: index, route, client_hour: new Date().getHours() })
     });
     const data = await res.json();
     if (!data.slots) throw new Error('no data');
@@ -606,12 +616,12 @@ window.narrateRoute = async function(event, index) {
     const res = await fetch(`${window.BACKEND_URL}/narrate-route`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ route_index: index, route })
+      body: JSON.stringify({ route_index: index, route, client_hour: new Date().getHours() })
     });
 
     if (res.status === 503) {
       if (attempt < 3) {
-        const waitSec = attempt * 15;
+        const waitSec = attempt * 20;
         btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Waking up (${waitSec}s)...`;
         await new Promise(r => setTimeout(r, waitSec * 1000));
         return attemptNarrate(attempt + 1);
