@@ -1521,7 +1521,20 @@ def explain_route():
         return jsonify({"status": "ok"}), 200
 
     if not groq_client:
-        return jsonify({"error": "Groq AI not available"}), 503
+        data = request.json or {}
+        route = data.get("route", {})
+        score = route.get("safety_score", 0)
+        label = "safe" if score >= 75 else "moderately safe" if score >= 60 else "high-risk"
+        hospitals = route.get("hospital_count", 0)
+        police = route.get("police_count", 0)
+        lights = route.get("street_light_score", 0)
+        fallback = (
+            f"This route has a safety score of {score}/100, making it {label}. "
+            f"There {'are' if hospitals else 'are no'} {hospitals} hospital(s) and {police} police station(s) nearby. "
+            f"Street lighting coverage is at {lights}%. "
+            f"{'Consider travelling during daylight hours for added safety.' if score < 75 else 'This is a recommended route for safe travel.'}"
+        )
+        return jsonify({"explanation": fallback, "route_index": data.get("route_index", 0)})
 
     try:
         data = request.json or {}
@@ -1690,7 +1703,7 @@ def narrate_route():
         return jsonify({"status": "ok"}), 200
 
     if not groq_client:
-        return jsonify({"error": "Groq AI not available"}), 503
+        return jsonify({"narration": None})  # frontend will use local TTS fallback
 
     try:
         data       = request.json or {}

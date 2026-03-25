@@ -26,7 +26,7 @@ requests==2.31.0
 polyline==2.0.0
 
 # Groq AI Integration
-groq==0.4.1
+groq>=0.13.0
 
 # Additional Dependencies (automatically installed)
 # - Werkzeug (Flask dependency)
