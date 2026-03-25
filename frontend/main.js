@@ -371,14 +371,30 @@ window.explainRoute = async function(event, index) {
   panel.classList.add('visible');
   textEl.textContent = 'SafeRoute AI is analyzing this route...';
 
-  try {
+  const attemptExplain = async (attempt) => {
     const res = await fetch(`${window.BACKEND_URL}/explain-route`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ route_index: index, route: route })
     });
 
+    if (res.status === 503) {
+      if (attempt < 3) {
+        const waitSec = attempt * 15;
+        textEl.textContent = `AI service is starting up... retrying in ${waitSec}s (attempt ${attempt}/3)`;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Waking up...`;
+        await new Promise(r => setTimeout(r, waitSec * 1000));
+        return attemptExplain(attempt + 1);
+      }
+      throw new Error('service_unavailable');
+    }
+
     const data = await res.json();
+    return data;
+  };
+
+  try {
+    const data = await attemptExplain(1);
 
     if (data.explanation) {
       textEl.textContent = data.explanation;
@@ -388,7 +404,11 @@ window.explainRoute = async function(event, index) {
       btn.innerHTML = '<i class="fa-solid fa-robot"></i> Ask AI Why';
     }
   } catch (err) {
-    textEl.textContent = 'Could not reach SafeRoute AI. Check your connection.';
+    if (err.message === 'service_unavailable') {
+      textEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> The AI backend is temporarily unavailable (Render free tier sleeping). Please wait ~30s and try again.';
+    } else {
+      textEl.textContent = 'Could not reach SafeRoute AI. Check your connection.';
+    }
     btn.innerHTML = '<i class="fa-solid fa-robot"></i> Ask AI Why';
     console.error('AI Explain Error:', err);
   } finally {
@@ -582,23 +602,36 @@ window.narrateRoute = async function(event, index) {
   btn.classList.add('speaking');
   narratingIndex = index;
 
-  try {
-    const res  = await fetch(`${window.BACKEND_URL}/narrate-route`, {
+  const attemptNarrate = async (attempt) => {
+    const res = await fetch(`${window.BACKEND_URL}/narrate-route`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ route_index: index, route })
     });
-    const data = await res.json();
 
-    if (data.narration) {
-      speakText(data.narration, index);
+    if (res.status === 503) {
+      if (attempt < 3) {
+        const waitSec = attempt * 15;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Waking up (${waitSec}s)...`;
+        await new Promise(r => setTimeout(r, waitSec * 1000));
+        return attemptNarrate(attempt + 1);
+      }
+      return null; // exhausted retries — fall back to local
+    }
+
+    const data = await res.json();
+    return data.narration || null;
+  };
+
+  try {
+    const narration = await attemptNarrate(1);
+    if (narration) {
+      speakText(narration, index);
     } else {
-      // Groq unavailable — use local fallback instantly
-      console.log('🔊 Groq unavailable, using local narration');
+      console.log('🔊 AI unavailable, using local narration');
       speakText(buildLocalNarration(route, index + 1), index);
     }
-  } catch (err) {
-    // Network/backend error — still narrate locally
+  } catch {
     console.log('🔊 Backend unreachable, using local narration');
     speakText(buildLocalNarration(route, index + 1), index);
   }
